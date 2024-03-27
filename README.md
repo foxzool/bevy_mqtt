@@ -5,7 +5,7 @@
 [![Documentation](https://docs.rs/bevy_mqtt/badge.svg)](https://docs.rs/bevy_mqtt)
 [![MIT/Apache 2.0](https://img.shields.io/badge/license-MIT%2FApache-blue.svg)](https://github.com/Seldom-SE/seldom_pixel#license)
 
-A Bevy Plugin for MQTT client.
+A mqtt client Plugin for Bevy game engine.
 
 ## Example
 
