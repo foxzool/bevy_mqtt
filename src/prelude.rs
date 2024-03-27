@@ -1,3 +1,3 @@
 #[doc(hidden)]
-pub use crate::{client::*, plugin::*};
+pub use crate::{client::*, events::*, plugin::*};
 
