@@ -7,7 +7,7 @@ use bevy_mqtt::rumqttc::{MqttOptions, QoS};
 fn main() {
     App::new()
         .insert_resource(MqttSetting {
-            mqtt_options: MqttOptions::new("rumqtt-sync", "localhost", 1883),
+            mqtt_options: MqttOptions::new("rumqtt-sync", "127.0.0.1", 1883),
             cap: 10,
         })
         .add_plugins((MinimalPlugins, MqttPlugin))
@@ -22,7 +22,7 @@ fn main() {
 
 fn handle_message(mut mqtt_event: EventReader<MqttEvent>) {
     for event in mqtt_event.read() {
-        println!("Received: {:?}", event.0);
+        println!("Received: {:?}", event);
     }
 }
 

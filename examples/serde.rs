@@ -1,15 +1,3 @@
-# bevy_mqtt
-
-[![Crates.io](https://img.shields.io/crates/v/bevy_mqtt)](https://crates.io/crates/bevy_mqtt)
-[![crates.io](https://img.shields.io/crates/d/bevy_mqtt)](https://crates.io/crates/bevy_cronjob)
-[![Documentation](https://docs.rs/bevy_mqtt/badge.svg)](https://docs.rs/bevy_mqtt)
-[![MIT/Apache 2.0](https://img.shields.io/badge/license-MIT%2FApache-blue.svg)](https://github.com/Seldom-SE/seldom_pixel#license)
-
-A Bevy Plugin for MQTT client.
-
-## Example
-
-```rust
 use std::time::SystemTime;
 
 use bevy::{prelude::*, time::common_conditions::on_timer};
@@ -100,19 +88,3 @@ fn publish_message(mut mqtt_client: Res<MqttClient>) {
             .unwrap();
     }
 }
-
-
-```
-
-## Supported Versions
-
-| bevy | bevy_mqtt |
-|------|-----------|
-| 0.13 | 0.1       |
-
-## License
-
-Dual-licensed under either
-
-- MIT
-- Apache 2.0
