@@ -19,8 +19,7 @@ impl Plugin for MqttPlugin {
 
         app.insert_resource(MqttClient(client));
         app.insert_non_send_resource(MqttConnection(connection));
-        app
-            .add_event::<MqttEvent>()
+        app.add_event::<MqttEvent>()
             .add_event::<MqttError>()
             .add_systems(Update, recv_connection);
     }
