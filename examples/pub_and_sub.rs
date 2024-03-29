@@ -1,13 +1,42 @@
-use bevy::prelude::*;
-use bevy::time::common_conditions::on_timer;
+use std::time::SystemTime;
+
+use bevy::{prelude::*, time::common_conditions::on_timer};
+use bincode::ErrorKind;
+use serde::{Deserialize, Serialize};
 
 use bevy_mqtt::prelude::*;
 use bevy_mqtt::rumqttc::{MqttOptions, QoS};
 
+#[derive(Serialize, Deserialize, Debug)]
+struct Message {
+    i: usize,
+    time: SystemTime,
+}
+
+impl From<&Message> for Vec<u8> {
+    fn from(value: &Message) -> Self {
+        bincode::serialize(value).unwrap()
+    }
+}
+
+impl From<Message> for Vec<u8> {
+    fn from(value: Message) -> Self {
+        bincode::serialize(&value).unwrap()
+    }
+}
+
+impl TryFrom<&[u8]> for Message {
+    type Error = Box<ErrorKind>;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        bincode::deserialize(value)
+    }
+}
+
 fn main() {
     App::new()
         .insert_resource(MqttSetting {
-            mqtt_options: MqttOptions::new("rumqtt-sync", "127.0.0.1", 1883),
+            mqtt_options: MqttOptions::new("mqtt-serde", "127.0.0.1", 1883),
             cap: 10,
         })
         .add_plugins((MinimalPlugins, MqttPlugin))
@@ -22,7 +51,16 @@ fn main() {
 
 fn handle_message(mut mqtt_event: EventReader<MqttEvent>) {
     for event in mqtt_event.read() {
-        println!("Received: {:?}", event);
+        match &event.0 {
+            rumqttc::Event::Incoming(income) => match income {
+                rumqttc::Incoming::Publish(publish) => {
+                    let message: Message = bincode::deserialize(&publish.payload).unwrap();
+                    println!("Received: {:?}", message);
+                }
+                _ => {}
+            },
+            rumqttc::Event::Outgoing(_) => {}
+        }
     }
 }
 
@@ -32,18 +70,21 @@ fn handle_error(mut error_events: EventReader<MqttError>) {
     }
 }
 
-fn sub_topic(mut mqtt_client: Res<MqttClient>) {
+fn sub_topic(mqtt_client: Res<MqttClient>) {
     mqtt_client
-        .subscribe("hello/+/world", QoS::AtMostOnce)
+        .try_subscribe("hello/mqtt", QoS::AtMostOnce)
         .unwrap();
 }
 
-fn publish_message(mut mqtt_client: Res<MqttClient>) {
+fn publish_message(mqtt_client: Res<MqttClient>) {
     for i in 0..3 {
-        let payload = vec![1; i];
-        let topic = format!("hello/{i}/world");
-        let qos = QoS::AtLeastOnce;
+        let message = Message {
+            i,
+            time: SystemTime::now(),
+        };
 
-        mqtt_client.publish(topic, qos, false, payload).unwrap();
+        mqtt_client
+            .try_publish("hello/mqtt", QoS::AtLeastOnce, false, message)
+            .unwrap();
     }
 }
