@@ -1,8 +1,10 @@
 use bevy::prelude::*;
 
-use crate::client::MqttClient;
-use crate::events::{MqttError, MqttEvent};
-use crate::systems::recv_connection;
+use crate::{
+    client::MqttClient,
+    events::{MqttError, MqttEvent},
+    systems::recv_connection,
+};
 
 #[derive(Default)]
 pub struct MqttPlugin;

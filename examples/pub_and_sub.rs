@@ -4,8 +4,10 @@ use bevy::{prelude::*, time::common_conditions::on_timer};
 use bincode::ErrorKind;
 use serde::{Deserialize, Serialize};
 
-use bevy_mqtt::prelude::*;
-use bevy_mqtt::rumqttc::{MqttOptions, QoS};
+use bevy_mqtt::{
+    prelude::*,
+    rumqttc::{MqttOptions, QoS},
+};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Message {

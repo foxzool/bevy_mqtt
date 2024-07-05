@@ -1,7 +1,9 @@
 use bevy::prelude::{EventWriter, ResMut};
 
-use crate::client::MqttClient;
-use crate::events::{MqttError, MqttEvent};
+use crate::{
+    client::MqttClient,
+    events::{MqttError, MqttEvent},
+};
 
 pub(crate) fn recv_connection(
     mut connection: ResMut<MqttClient>,

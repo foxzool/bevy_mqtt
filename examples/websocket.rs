@@ -2,8 +2,10 @@ use std::time::Duration;
 
 use bevy::{prelude::*, time::common_conditions::on_timer};
 
-use bevy_mqtt::prelude::*;
-use bevy_mqtt::rumqttc::{MqttOptions, QoS, Transport};
+use bevy_mqtt::{
+    prelude::*,
+    rumqttc::{MqttOptions, QoS, Transport},
+};
 
 fn main() {
     let mut mqtt_options =

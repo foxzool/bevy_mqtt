@@ -2,8 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use bevy::prelude::{Deref, DerefMut, FromWorld, Resource, World};
 use rumqttc::{ConnectionError, Event, EventLoop};
-use tokio::runtime;
-use tokio::sync::mpsc;
+use tokio::{runtime, sync::mpsc};
 
 /// A struct that represents the settings for an MQTT connection
 #[derive(Resource)]
