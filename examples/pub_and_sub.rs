@@ -1,13 +1,14 @@
 use std::time::SystemTime;
 
 use bevy::{prelude::*, time::common_conditions::on_timer};
+use bevy_mqtt::{
+    rumqttc::{MqttOptions, QoS},
+    MqttClientState, MqttError, MqttEvent, MqttPlugin, MqttPublishOutgoing, MqttSetting,
+    MqttSubTopicOutgoing,
+};
+use bevy_state::prelude::OnEnter;
 use bincode::ErrorKind;
 use serde::{Deserialize, Serialize};
-
-use bevy_mqtt::{
-    prelude::*,
-    rumqttc::{MqttOptions, QoS},
-};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Message {
@@ -43,7 +44,7 @@ fn main() {
         })
         .add_plugins((MinimalPlugins, MqttPlugin))
         .add_systems(Update, (handle_message, handle_error))
-        .add_systems(Startup, sub_topic)
+        .add_systems(OnEnter(MqttClientState::Connected), sub_topic)
         .add_systems(
             Update,
             publish_message.run_if(on_timer(std::time::Duration::from_secs(1))),
@@ -57,9 +58,11 @@ fn handle_message(mut mqtt_event: EventReader<MqttEvent>) {
             rumqttc::Event::Incoming(income) => match income {
                 rumqttc::Incoming::Publish(publish) => {
                     let message: Message = bincode::deserialize(&publish.payload).unwrap();
-                    println!("Received: {:?}", message);
+                    println!("Received Publish: {:?}", message);
                 }
-                _ => {}
+                _ => {
+                    println!("Incoming: {:?}", income);
+                }
             },
             rumqttc::Event::Outgoing(_) => {}
         }
@@ -72,21 +75,28 @@ fn handle_error(mut error_events: EventReader<MqttError>) {
     }
 }
 
-fn sub_topic(mqtt_client: Res<MqttClient>) {
-    mqtt_client
-        .try_subscribe("hello/mqtt", QoS::AtMostOnce)
-        .unwrap();
+fn sub_topic(mut sub_events: EventWriter<MqttSubTopicOutgoing>) {
+    sub_events.send(MqttSubTopicOutgoing {
+        topic: "hello/mqtt".to_string(),
+        qos: QoS::AtMostOnce,
+    });
 }
 
-fn publish_message(mqtt_client: Res<MqttClient>) {
+fn publish_message(mut pub_events: EventWriter<MqttPublishOutgoing>) {
+    let mut list = vec![];
     for i in 0..3 {
         let message = Message {
             i,
             time: SystemTime::now(),
         };
 
-        mqtt_client
-            .try_publish("hello/mqtt", QoS::AtLeastOnce, false, message)
-            .unwrap();
+        list.push(MqttPublishOutgoing {
+            topic: "hello/mqtt".to_string(),
+            qos: QoS::AtLeastOnce,
+            retain: false,
+            payload: message.into(),
+        });
     }
+
+    pub_events.send_batch(list);
 }
