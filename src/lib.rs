@@ -1,16 +1,17 @@
 //! A Bevy plugin for MQTT
 
-use bevy_app::Plugin;
-use bevy_app::{App, Update};
+use bevy_app::{App, Plugin, Update};
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::{
     resource_added, resource_exists, Event, EventReader, EventWriter, IntoSystemConfigs, Res,
     ResMut, Resource,
 };
-use bevy_log::debug;
-use bevy_state::app::{AppExtStates, StatesPlugin};
-use bevy_state::prelude::in_state;
-use bevy_state::state::{NextState, States};
+use bevy_log::{debug, error};
+use bevy_state::{
+    app::{AppExtStates, StatesPlugin},
+    prelude::in_state,
+    state::{NextState, States},
+};
 use bevy_tokio_tasks::{TokioTasksPlugin, TokioTasksRuntime};
 use bytes::Bytes;
 use kanal::{bounded_async, AsyncReceiver};
@@ -171,6 +172,7 @@ fn handle_mqtt_events(
     }
 
     while let Ok(Some(err)) = client.from_async_error.try_recv() {
+        next_state.set(MqttClientState::Disconnected);
         error_events.send(MqttError(err));
     }
 }
@@ -194,17 +196,19 @@ fn spawn_client(setting: Res<MqttSetting>, runtime: Res<TokioTasksRuntime>) {
         })
         .await;
         debug!(
-            "Mqtt client connect_to {:?}",
+            "Mqtt client connecting_to {:?}",
             setting.mqtt_options.broker_address()
         );
         loop {
             match event_loop.poll().await {
-                Ok(event) => to_async_event.send(event).await.expect("send event failed"),
+                Ok(event) => {
+                    let _ = to_async_event.send(event).await;
+                }
                 Err(connection_err) => {
-                    to_async_error
-                        .send(connection_err)
-                        .await
-                        .expect("send error failed");
+                    error!("Mqtt client connection error: {:?}", connection_err);
+                    let _ = to_async_error.send(connection_err).await;
+                    // auto reconnect after 10 seconds
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                 }
             }
         }

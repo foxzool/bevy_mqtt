@@ -1,7 +1,7 @@
 [package]
 name = "bevy_mqtt"
 description = "A simple MQTT client for Bevy"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 readme = "README.md"
 repository = "https://github.com/foxzool/bevy_mqtt"
@@ -27,13 +27,18 @@ rumqttc = { version = "0.24.0", features = ["url"] }
 bevy-tokio-tasks = { version = "0.14.0" }
 kanal = "0.1.0-pre8"
 bytes = "1"
-log = "0.4.22"
+tokio = { version = "1", features = ["rt", "sync"] }
+
 
 [dev-dependencies]
 bevy = { version = "0.14.2", default-features = false }
 bincode = "1.3.3"
 time = "0.3"
 serde = { version = "1", features = ["derive"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
 
 [[example]]
 name = "pub_and_sub"

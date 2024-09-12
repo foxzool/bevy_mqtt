@@ -1,6 +1,7 @@
 use std::time::SystemTime;
 
 use bevy::{prelude::*, time::common_conditions::on_timer};
+use bevy_log::LogPlugin;
 use bevy_mqtt::{
     rumqttc::{MqttOptions, QoS},
     MqttClientState, MqttError, MqttEvent, MqttPlugin, MqttPublishOutgoing, MqttSetting,
@@ -42,7 +43,7 @@ fn main() {
             mqtt_options: MqttOptions::new("mqtt-serde", "127.0.0.1", 1883),
             cap: 10,
         })
-        .add_plugins((MinimalPlugins, MqttPlugin))
+        .add_plugins((MinimalPlugins, MqttPlugin, LogPlugin::default()))
         .add_systems(Update, (handle_message, handle_error))
         .add_systems(OnEnter(MqttClientState::Connected), sub_topic)
         .add_systems(

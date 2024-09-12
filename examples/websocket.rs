@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use bevy::{prelude::*, time::common_conditions::on_timer};
+use bevy_log::LogPlugin;
 use bevy_mqtt::{
     rumqttc::{MqttOptions, QoS, Transport},
     MqttClientState, MqttError, MqttPlugin, MqttPublishOutgoing, MqttPublishPacket, MqttSetting,
@@ -18,7 +19,7 @@ fn main() {
             mqtt_options,
             cap: 10,
         })
-        .add_plugins((MinimalPlugins, MqttPlugin))
+        .add_plugins((MinimalPlugins, MqttPlugin, LogPlugin::default()))
         .add_systems(OnEnter(MqttClientState::Connected), sub_topic)
         .add_systems(Update, (handle_mqtt_publish, handle_error))
         .add_systems(
