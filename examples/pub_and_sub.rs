@@ -5,7 +5,7 @@ use bevy_log::LogPlugin;
 use bevy_mqtt::{
     rumqttc::{MqttOptions, QoS},
     MqttClient, MqttClientState, MqttError, MqttEvent, MqttPlugin, MqttPublishOutgoing,
-    MqttSetting, MqttSubscribe,
+    MqttSetting, SubscribeTopic, TopicMessage,
 };
 use bevy_state::prelude::OnEnter;
 use bincode::ErrorKind;
@@ -89,12 +89,15 @@ fn sub_topic_direct(client: Res<MqttClient>) {
 }
 
 fn sub_topic_by_component(mut commands: Commands) {
-    for component in ["bevy", "ecs"] {
-        commands.spawn(MqttSubscribe {
-            topic: format!("{}/mqtt", component),
-            qos: QoS::AtMostOnce,
+    commands
+        .spawn(SubscribeTopic::new("+/mqtt", QoS::AtMostOnce))
+        .observe(|topic_message: Trigger<TopicMessage>| {
+            println!(
+                "topic: {} received : {:?}",
+                topic_message.event().topic,
+                topic_message.event().payload
+            );
         });
-    }
 }
 
 fn publish_message(mut pub_events: EventWriter<MqttPublishOutgoing>) {
@@ -110,6 +113,16 @@ fn publish_message(mut pub_events: EventWriter<MqttPublishOutgoing>) {
             qos: QoS::AtLeastOnce,
             retain: false,
             payload: message.into(),
+        });
+        list.push(MqttPublishOutgoing {
+            topic: "bevy/mqtt".to_string(),
+            qos: QoS::AtLeastOnce,
+            retain: false,
+            payload: Message {
+                i: 999,
+                time: SystemTime::now(),
+            }
+            .into(),
         });
     }
 

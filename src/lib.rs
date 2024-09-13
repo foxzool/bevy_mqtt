@@ -3,7 +3,7 @@
 use bevy_app::{App, Plugin, Update};
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::*;
-use bevy_log::{debug, error};
+use bevy_log::{debug, error, trace};
 use bevy_state::{
     app::{AppExtStates, StatesPlugin},
     prelude::in_state,
@@ -12,8 +12,9 @@ use bevy_state::{
 use bevy_tokio_tasks::{TokioTasksPlugin, TokioTasksRuntime};
 use bytes::Bytes;
 use kanal::{bounded_async, AsyncReceiver};
+use regex::Regex;
 pub use rumqttc;
-use rumqttc::{ConnectionError, QoS, SubscribeFilter};
+use rumqttc::{ConnectionError, QoS};
 use std::ops::{Deref, DerefMut};
 
 #[derive(Default)]
@@ -31,25 +32,19 @@ impl Plugin for MqttPlugin {
         app.init_state::<MqttClientState>()
             .add_event::<MqttEvent>()
             .add_event::<MqttError>()
-            .add_event::<MqttSubTopicOutgoing>()
-            .add_event::<MqttSubManyOutgoing>()
-            .add_event::<MqttUnSubTopicOutgoing>()
             .add_event::<MqttPublishOutgoing>()
             .add_event::<MqttPublishPacket>()
             .add_event::<DisconnectMqttClient>()
             .add_systems(Update, spawn_client.run_if(resource_added::<MqttSetting>))
             .add_systems(
                 Update,
-                handle_mqtt_events.run_if(resource_exists::<MqttClient>),
+                (handle_mqtt_events, dispatch_publish_to_topic)
+                    .run_if(resource_exists::<MqttClient>),
             )
             .add_systems(
                 Update,
-                (
-                    handle_sub_topic,
-                    handle_outgoing_publish,
-                    handle_disconnect_event,
-                )
-                    .distributive_run_if(in_state(MqttClientState::Connected)),
+                (handle_outgoing_publish, handle_disconnect_event)
+                    .run_if(in_state(MqttClientState::Connected)),
             )
             .observe(on_add_subscribe)
             .observe(on_remove_subscribe);
@@ -101,22 +96,6 @@ pub struct MqttEvent(pub rumqttc::Event);
 /// A wrapper around rumqttc::ConnectionError
 #[derive(Debug, Deref, DerefMut, Event)]
 pub struct MqttError(pub ConnectionError);
-
-#[derive(Debug, Event)]
-pub struct MqttSubTopicOutgoing {
-    pub topic: String,
-    pub qos: QoS,
-}
-
-#[derive(Debug, Event)]
-pub struct MqttSubManyOutgoing {
-    pub topics: Vec<SubscribeFilter>,
-}
-
-#[derive(Debug, Event)]
-pub struct MqttUnSubTopicOutgoing {
-    pub topic: String,
-}
 
 #[derive(Debug, Event)]
 pub struct MqttPublishOutgoing {
@@ -214,15 +193,72 @@ fn spawn_client(setting: Res<MqttSetting>, runtime: Res<TokioTasksRuntime>) {
     });
 }
 
+/// A component to store the topic and qos to subscribe
 #[derive(Debug, Clone, Component)]
-pub struct MqttSubscribe {
+pub struct SubscribeTopic {
+    topic: String,
+    re: Regex,
+    qos: QoS,
+}
+
+impl SubscribeTopic {
+    pub fn new(topic: impl ToString, qos: QoS) -> Self {
+        let topic = topic.to_string();
+        let regex_pattern = topic.replace("+", "[^/]+").replace("#", ".+");
+        let re = Regex::new(&format!("^{}$", regex_pattern)).unwrap();
+        Self { topic, re, qos }
+    }
+
+    pub fn matches(&self, topic: &str) -> bool {
+        self.re.is_match(topic)
+    }
+
+    pub fn topic(&self) -> &str {
+        &self.topic
+    }
+
+    pub fn qos(&self) -> QoS {
+        self.qos
+    }
+}
+
+#[derive(Debug, Event)]
+pub struct TopicMessage {
     pub topic: String,
-    pub qos: QoS,
+    pub payload: Bytes,
+}
+
+fn dispatch_publish_to_topic(
+    mut publish_incoming: EventReader<MqttPublishPacket>,
+    topic_query: Query<(Entity, &SubscribeTopic)>,
+    mut commands: Commands,
+) {
+    for packet in publish_incoming.read() {
+        let mut match_entities = vec![];
+        for (e, subscribed_topic) in topic_query.iter() {
+            if subscribed_topic.matches(&packet.topic) {
+                trace!(
+                    "{} Received publish packet: {:?}",
+                    subscribed_topic.topic(),
+                    packet
+                );
+                match_entities.push(e);
+            }
+        }
+
+        commands.trigger_targets(
+            TopicMessage {
+                topic: packet.topic.clone(),
+                payload: packet.payload.clone(),
+            },
+            match_entities,
+        );
+    }
 }
 
 fn on_add_subscribe(
-    trigger: Trigger<OnAdd, MqttSubscribe>,
-    query: Query<&MqttSubscribe>,
+    trigger: Trigger<OnAdd, SubscribeTopic>,
+    query: Query<&SubscribeTopic>,
     client: Res<MqttClient>,
 ) {
     let subscribe = query.get(trigger.entity()).unwrap();
@@ -233,8 +269,8 @@ fn on_add_subscribe(
 }
 
 fn on_remove_subscribe(
-    trigger: Trigger<OnRemove, MqttSubscribe>,
-    query: Query<&MqttSubscribe>,
+    trigger: Trigger<OnRemove, SubscribeTopic>,
+    query: Query<&SubscribeTopic>,
     client: Res<MqttClient>,
 ) {
     let subscribe = query.get(trigger.entity()).unwrap();
@@ -242,35 +278,6 @@ fn on_remove_subscribe(
     client
         .try_unsubscribe(subscribe.topic.clone())
         .expect("unsubscribe failed");
-}
-
-fn handle_sub_topic(
-    mut sub_events: EventReader<MqttSubTopicOutgoing>,
-    mut sub_many_events: EventReader<MqttSubManyOutgoing>,
-    mut unsub_events: EventReader<MqttUnSubTopicOutgoing>,
-    client: Res<MqttClient>,
-) {
-    for sub in sub_events.read() {
-        debug!("subscribe to {:?}", sub.topic);
-        client
-            .try_subscribe(sub.topic.clone(), sub.qos)
-            .expect("subscribe failed");
-    }
-
-    for sub in sub_many_events.read() {
-        for topic in &sub.topics {
-            debug!("subscribe to {:?}", topic.path);
-        }
-        client
-            .try_subscribe_many(sub.topics.clone())
-            .expect("subscribe many failed");
-    }
-
-    for unsub in unsub_events.read() {
-        client
-            .try_unsubscribe(unsub.topic.clone())
-            .expect("unsubscribe failed");
-    }
 }
 
 fn handle_outgoing_publish(
@@ -296,4 +303,10 @@ fn handle_disconnect_event(
     for _ in disconnect_events.read() {
         client.try_disconnect().expect("disconnect failed");
     }
+}
+
+#[test]
+fn test_topic_matches() {
+    let subscribe = SubscribeTopic::new("hello/+/world".to_string(), QoS::AtMostOnce);
+    assert!(subscribe.matches("hello/1/world"));
 }
