@@ -10,6 +10,10 @@ A mqtt client Plugin for Bevy game engine.
 
 ## Example
 
+first run as mqtt broker like [mosquitto](https://mosquitto.org/)
+
+then run the example
+
 ```rust
 use std::time::SystemTime;
 

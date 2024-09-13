@@ -2,10 +2,7 @@
 
 use bevy_app::{App, Plugin, Update};
 use bevy_derive::{Deref, DerefMut};
-use bevy_ecs::prelude::{
-    resource_added, resource_exists, Event, EventReader, EventWriter, IntoSystemConfigs, Res,
-    ResMut, Resource,
-};
+use bevy_ecs::prelude::*;
 use bevy_log::{debug, error};
 use bevy_state::{
     app::{AppExtStates, StatesPlugin},
@@ -53,7 +50,9 @@ impl Plugin for MqttPlugin {
                     handle_disconnect_event,
                 )
                     .distributive_run_if(in_state(MqttClientState::Connected)),
-            );
+            )
+            .observe(on_add_subscribe)
+            .observe(on_remove_subscribe);
     }
 }
 
@@ -213,6 +212,36 @@ fn spawn_client(setting: Res<MqttSetting>, runtime: Res<TokioTasksRuntime>) {
             }
         }
     });
+}
+
+#[derive(Debug, Clone, Component)]
+pub struct MqttSubscribe {
+    pub topic: String,
+    pub qos: QoS,
+}
+
+fn on_add_subscribe(
+    trigger: Trigger<OnAdd, MqttSubscribe>,
+    query: Query<&MqttSubscribe>,
+    client: Res<MqttClient>,
+) {
+    let subscribe = query.get(trigger.entity()).unwrap();
+    debug!("subscribe to {:?}", subscribe.topic);
+    client
+        .try_subscribe(subscribe.topic.clone(), subscribe.qos)
+        .expect("subscribe failed");
+}
+
+fn on_remove_subscribe(
+    trigger: Trigger<OnRemove, MqttSubscribe>,
+    query: Query<&MqttSubscribe>,
+    client: Res<MqttClient>,
+) {
+    let subscribe = query.get(trigger.entity()).unwrap();
+    debug!("unsubscribe to {:?}", subscribe.topic);
+    client
+        .try_unsubscribe(subscribe.topic.clone())
+        .expect("unsubscribe failed");
 }
 
 fn handle_sub_topic(

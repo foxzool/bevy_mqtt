@@ -4,8 +4,8 @@ use bevy::{prelude::*, time::common_conditions::on_timer};
 use bevy_log::LogPlugin;
 use bevy_mqtt::{
     rumqttc::{MqttOptions, QoS},
-    MqttClientState, MqttError, MqttEvent, MqttPlugin, MqttPublishOutgoing, MqttSetting,
-    MqttSubTopicOutgoing,
+    MqttClient, MqttClientState, MqttError, MqttEvent, MqttPlugin, MqttPublishOutgoing,
+    MqttSetting, MqttSubscribe,
 };
 use bevy_state::prelude::OnEnter;
 use bincode::ErrorKind;
@@ -45,7 +45,10 @@ fn main() {
         })
         .add_plugins((MinimalPlugins, MqttPlugin, LogPlugin::default()))
         .add_systems(Update, (handle_message, handle_error))
-        .add_systems(OnEnter(MqttClientState::Connected), sub_topic)
+        .add_systems(
+            OnEnter(MqttClientState::Connected),
+            (sub_topic_direct, sub_topic_by_component),
+        )
         .add_systems(
             Update,
             publish_message.run_if(on_timer(std::time::Duration::from_secs(1))),
@@ -76,11 +79,22 @@ fn handle_error(mut error_events: EventReader<MqttError>) {
     }
 }
 
-fn sub_topic(mut sub_events: EventWriter<MqttSubTopicOutgoing>) {
-    sub_events.send(MqttSubTopicOutgoing {
-        topic: "hello/mqtt".to_string(),
-        qos: QoS::AtMostOnce,
-    });
+/// there are two ways to subscribe to a topic
+/// 1. Directly subscribe to a topic
+/// 2. Subscribe to a topic by component
+fn sub_topic_direct(client: Res<MqttClient>) {
+    client
+        .try_subscribe("hello/mqtt", QoS::AtMostOnce)
+        .expect("subscribe failed");
+}
+
+fn sub_topic_by_component(mut commands: Commands) {
+    for component in ["bevy", "ecs"] {
+        commands.spawn(MqttSubscribe {
+            topic: format!("{}/mqtt", component),
+            qos: QoS::AtMostOnce,
+        });
+    }
 }
 
 fn publish_message(mut pub_events: EventWriter<MqttPublishOutgoing>) {
