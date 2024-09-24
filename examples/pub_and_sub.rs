@@ -4,8 +4,8 @@ use bevy::{prelude::*, time::common_conditions::on_timer};
 use bevy_log::LogPlugin;
 use bevy_mqtt::{
     rumqttc::{MqttOptions, QoS},
-    MqttClient, MqttClientState, MqttError, MqttEvent, MqttPlugin, MqttPublishOutgoing,
-    MqttSetting, SubscribeTopic, TopicMessage,
+    MqttClient, MqttClientError, MqttClientState, MqttConnectError, MqttEvent, MqttPlugin,
+    MqttPublishOutgoing, MqttSetting, SubscribeTopic, TopicMessage,
 };
 use bevy_state::prelude::OnEnter;
 use bincode::ErrorKind;
@@ -73,9 +73,16 @@ fn handle_message(mut mqtt_event: EventReader<MqttEvent>) {
     }
 }
 
-fn handle_error(mut error_events: EventReader<MqttError>) {
-    for error in error_events.read() {
-        println!("Error: {:?}", error);
+fn handle_error(
+    mut connect_errors: EventReader<MqttConnectError>,
+    mut client_errors: EventReader<MqttClientError>,
+) {
+    for error in connect_errors.read() {
+        println!("connect Error: {:?}", error);
+    }
+
+    for error in client_errors.read() {
+        println!("client Error: {:?}", error);
     }
 }
 

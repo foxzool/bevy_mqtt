@@ -14,7 +14,7 @@ use bytes::Bytes;
 use kanal::{bounded_async, AsyncReceiver};
 use regex::Regex;
 pub use rumqttc;
-use rumqttc::{ConnectionError, QoS};
+use rumqttc::{ClientError, ConnectionError, QoS};
 use std::ops::{Deref, DerefMut};
 
 #[derive(Default)]
@@ -31,7 +31,8 @@ impl Plugin for MqttPlugin {
 
         app.init_state::<MqttClientState>()
             .add_event::<MqttEvent>()
-            .add_event::<MqttError>()
+            .add_event::<MqttConnectError>()
+            .add_event::<MqttClientError>()
             .add_event::<MqttPublishOutgoing>()
             .add_event::<MqttPublishPacket>()
             .add_event::<DisconnectMqttClient>()
@@ -95,7 +96,11 @@ pub struct MqttEvent(pub rumqttc::Event);
 
 /// A wrapper around rumqttc::ConnectionError
 #[derive(Debug, Deref, DerefMut, Event)]
-pub struct MqttError(pub ConnectionError);
+pub struct MqttConnectError(pub ConnectionError);
+
+/// A wrapper around rumqttc::ClientError
+#[derive(Debug, Deref, DerefMut, Event)]
+pub struct MqttClientError(pub ClientError);
 
 #[derive(Debug, Event)]
 pub struct MqttPublishOutgoing {
@@ -115,14 +120,14 @@ pub struct MqttPublishPacket {
     pub payload: Bytes,
 }
 
-/// A event to disconnect an MQTT client
+/// AN event to disconnect an MQTT client
 #[derive(Event)]
 pub struct DisconnectMqttClient;
 
 fn handle_mqtt_events(
     client: Res<MqttClient>,
     mut mqtt_events: EventWriter<MqttEvent>,
-    mut error_events: EventWriter<MqttError>,
+    mut error_events: EventWriter<MqttConnectError>,
     mut next_state: ResMut<NextState<MqttClientState>>,
     mut publish_incoming: EventWriter<MqttPublishPacket>,
 ) {
@@ -151,7 +156,7 @@ fn handle_mqtt_events(
 
     while let Ok(Some(err)) = client.from_async_error.try_recv() {
         next_state.set(MqttClientState::Disconnected);
-        error_events.send(MqttError(err));
+        error_events.send(MqttConnectError(err));
     }
 }
 
@@ -260,39 +265,42 @@ fn on_add_subscribe(
     trigger: Trigger<OnAdd, SubscribeTopic>,
     query: Query<&SubscribeTopic>,
     client: Res<MqttClient>,
+    mut client_error: EventWriter<MqttClientError>,
 ) {
     let subscribe = query.get(trigger.entity()).unwrap();
     debug!("subscribe to {:?}", subscribe.topic);
-    client
+    let _ = client
         .try_subscribe(subscribe.topic.clone(), subscribe.qos)
-        .expect("subscribe failed");
+        .map_err(|e| client_error.send(MqttClientError(e)));
 }
 
 fn on_remove_subscribe(
     trigger: Trigger<OnRemove, SubscribeTopic>,
     query: Query<&SubscribeTopic>,
     client: Res<MqttClient>,
+    mut client_error: EventWriter<MqttClientError>,
 ) {
     let subscribe = query.get(trigger.entity()).unwrap();
     debug!("unsubscribe to {:?}", subscribe.topic);
-    client
+    let _ = client
         .try_unsubscribe(subscribe.topic.clone())
-        .expect("unsubscribe failed");
+        .map_err(|e| client_error.send(MqttClientError(e)));
 }
 
 fn handle_outgoing_publish(
     mut pub_events: EventReader<MqttPublishOutgoing>,
     client: Res<MqttClient>,
+    mut client_error: EventWriter<MqttClientError>,
 ) {
     for event in pub_events.read() {
-        client
+        let _ = client
             .try_publish(
                 event.topic.clone(),
                 event.qos,
                 event.retain,
                 event.payload.clone(),
             )
-            .expect("publish failed");
+            .map_err(|e| client_error.send(MqttClientError(e)));
     }
 }
 

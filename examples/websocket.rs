@@ -4,8 +4,8 @@ use bevy::{prelude::*, time::common_conditions::on_timer};
 use bevy_log::LogPlugin;
 use bevy_mqtt::{
     rumqttc::{MqttOptions, QoS, Transport},
-    MqttClientState, MqttError, MqttPlugin, MqttPublishOutgoing, MqttPublishPacket, MqttSetting,
-    MqttSubTopicOutgoing,
+    MqttClient, MqttClientState, MqttConnectError, MqttPlugin, MqttPublishOutgoing,
+    MqttPublishPacket, MqttSetting,
 };
 use bevy_state::state::OnEnter;
 
@@ -24,7 +24,7 @@ fn main() {
         .add_systems(Update, (handle_mqtt_publish, handle_error))
         .add_systems(
             Update,
-            publish_message.run_if(on_timer(std::time::Duration::from_secs(1))),
+            publish_message.run_if(on_timer(Duration::from_secs(1))),
         )
         .run();
 }
@@ -41,17 +41,16 @@ fn handle_mqtt_publish(mut mqtt_event: EventReader<MqttPublishPacket>) {
     }
 }
 
-fn handle_error(mut error_events: EventReader<MqttError>) {
+fn handle_error(mut error_events: EventReader<MqttConnectError>) {
     for error in error_events.read() {
         println!("Error: {:?}", error);
     }
 }
 
-fn sub_topic(mut sub_events: EventWriter<MqttSubTopicOutgoing>) {
-    sub_events.send(MqttSubTopicOutgoing {
-        topic: "hello/mqtt".to_string(),
-        qos: QoS::AtMostOnce,
-    });
+fn sub_topic(client: Res<MqttClient>) {
+    client
+        .try_subscribe("hello/mqtt", QoS::AtMostOnce)
+        .expect("subscribe failed");
 }
 
 fn publish_message(mut pub_events: EventWriter<MqttPublishOutgoing>) {
