@@ -44,19 +44,21 @@ struct WebsocketMqttClient;
 
 /// this is a system that subscribes to a topic and handle the incoming messages
 fn sub_topic(
-    mqtt_client: Query<(Entity, &MqttClient), Added<MqttClientConnected>>,
+    mqtt_client: Query<(Entity, &MqttClient, &MqttSetting), Added<MqttClientConnected>>,
     mut commands: Commands,
 ) {
-    for (entity, client) in mqtt_client.iter() {
+    for (entity, client, setting) in mqtt_client.iter() {
         client
             .subscribe("hello".to_string(), QoS::AtMostOnce)
             .unwrap();
 
+        let setting = setting.clone();
         let child_id = commands
             .spawn(SubscribeTopic::new("+/mqtt", QoS::AtMostOnce))
-            .observe(|topic_message: Trigger<TopicMessage>| {
+            .observe(move |topic_message: Trigger<TopicMessage>| {
                 println!(
-                    "Topic: '+/mqtt' received : {:?}",
+                    "{:?}: Topic: '+/mqtt' received : {:?}",
+                    setting.mqtt_options.broker_address().clone(),
                     topic_message.event().payload
                 );
             })
@@ -68,7 +70,7 @@ fn sub_topic(
 /// this is global handler for all incoming messages
 fn handle_message(mut mqtt_event: EventReader<MqttEvent>) {
     for event in mqtt_event.read() {
-        match &event.0 {
+        match &event.event {
             rumqttc::Event::Incoming(income) => match income {
                 rumqttc::Incoming::Publish(publish) => {
                     println!(

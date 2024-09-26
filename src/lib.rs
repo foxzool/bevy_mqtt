@@ -1,7 +1,6 @@
 //! A Bevy plugin for MQTT
 
 use bevy_app::{App, Plugin, Update};
-use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::*;
 use bevy_hierarchy::Parent;
 use bevy_log::{debug, trace};
@@ -73,8 +72,11 @@ impl DerefMut for MqttClient {
 pub struct MqttClientConnected;
 
 /// A wrapper around rumqttc::Event
-#[derive(Debug, Clone, PartialEq, Eq, Deref, DerefMut, Event)]
-pub struct MqttEvent(pub rumqttc::Event);
+#[derive(Debug, Clone, PartialEq, Eq, Event)]
+pub struct MqttEvent {
+    pub entity: Entity,
+    pub event: rumqttc::Event,
+}
 
 /// A wrapper around rumqttc::ConnectionError
 #[derive(Debug, Event)]
@@ -144,7 +146,10 @@ fn handle_mqtt_events(
                 }
                 rumqttc::Event::Incoming(_) | rumqttc::Event::Outgoing(_) => {}
             }
-            mqtt_events.send(MqttEvent(event));
+            mqtt_events.send(MqttEvent {
+                entity,
+                event: event.clone(),
+            });
         }
 
         while let Ok(error) = client.from_async_error.try_recv() {
