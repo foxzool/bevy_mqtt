@@ -4,9 +4,9 @@ use bevy_app::{App, Plugin, Update};
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::*;
 use bevy_hierarchy::Parent;
-use bevy_log::{debug, error, trace};
+use bevy_log::{debug, trace};
 use bytes::Bytes;
-use kanal::{bounded, Receiver};
+use flume::{bounded, Receiver};
 use regex::Regex;
 pub use rumqttc;
 use rumqttc::{ClientError, ConnectionError, QoS};
@@ -120,7 +120,7 @@ fn handle_mqtt_events(
     mut publish_incoming: EventWriter<MqttPublishPacket>,
 ) {
     for (entity, client, setting) in clients.iter() {
-        while let Ok(Some(event)) = client.from_async_event.try_recv() {
+        while let Ok(event) = client.from_async_event.try_recv() {
             match &event {
                 rumqttc::Event::Incoming(rumqttc::Incoming::ConnAck(_)) => {
                     debug!(
@@ -147,7 +147,7 @@ fn handle_mqtt_events(
             mqtt_events.send(MqttEvent(event));
         }
 
-        while let Ok(Some(error)) = client.from_async_error.try_recv() {
+        while let Ok(error) = client.from_async_error.try_recv() {
             commands.entity(entity).remove::<MqttClientConnected>();
             error_events.send(MqttConnectError { entity, error });
         }
@@ -165,10 +165,6 @@ fn on_added_setting_component(
 
         let (client, mut connection) =
             rumqttc::Client::new(setting.mqtt_options.clone(), setting.cap);
-
-        client
-            .publish("hello/rumqtt", QoS::AtLeastOnce, false, vec![1, 2, 3])
-            .unwrap();
 
         thread::spawn(move || {
             for notification in connection.iter() {
