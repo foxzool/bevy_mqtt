@@ -8,7 +8,7 @@ use bytes::Bytes;
 use flume::{bounded, Receiver};
 use regex::Regex;
 pub use rumqttc;
-use rumqttc::{ClientError, ConnectionError, QoS};
+use rumqttc::{ClientError, ConnectionError, QoS, SubscribeFilter};
 use std::ops::{Deref, DerefMut};
 use std::thread;
 
@@ -23,7 +23,10 @@ impl Plugin for MqttPlugin {
             .add_event::<MqttPublishOutgoing>()
             .add_event::<MqttPublishPacket>()
             .add_event::<DisconnectMqttClient>()
-            .add_systems(Update, on_added_setting_component)
+            .add_systems(
+                Update,
+                (on_added_setting_component, pending_subscribe_topic),
+            )
             .add_systems(
                 Update,
                 (
@@ -49,8 +52,9 @@ pub struct MqttSetting {
 #[derive(Component, Clone)]
 pub struct MqttClient {
     client: rumqttc::Client,
-    from_async_event: Receiver<rumqttc::Event>,
-    from_async_error: Receiver<ConnectionError>,
+    event_rx: Receiver<rumqttc::Event>,
+    error_rx: Receiver<ConnectionError>,
+    pedding_subscribes: Vec<SubscribeFilter>,
 }
 
 impl Deref for MqttClient {
@@ -122,7 +126,7 @@ fn handle_mqtt_events(
     mut publish_incoming: EventWriter<MqttPublishPacket>,
 ) {
     for (entity, client, setting) in clients.iter() {
-        while let Ok(event) = client.from_async_event.try_recv() {
+        while let Ok(event) = client.event_rx.try_recv() {
             match &event {
                 rumqttc::Event::Incoming(rumqttc::Incoming::ConnAck(_)) => {
                     debug!(
@@ -152,7 +156,7 @@ fn handle_mqtt_events(
             });
         }
 
-        while let Ok(error) = client.from_async_error.try_recv() {
+        while let Ok(error) = client.error_rx.try_recv() {
             commands.entity(entity).remove::<MqttClientConnected>();
             error_events.send(MqttConnectError { entity, error });
         }
@@ -188,8 +192,9 @@ fn on_added_setting_component(
 
         commands.entity(entity).insert(MqttClient {
             client,
-            from_async_event,
-            from_async_error,
+            event_rx: from_async_event,
+            error_rx: from_async_error,
+            pedding_subscribes: vec![],
         });
     }
 }
@@ -257,22 +262,30 @@ fn dispatch_publish_to_topic(
     }
 }
 
-fn on_add_subscribe(
-    clients: Query<&MqttClient>,
-    query: Query<(&Parent, &SubscribeTopic), Added<SubscribeTopic>>,
+fn pending_subscribe_topic(
+    mut clients: Query<(Entity, &mut MqttClient)>,
     mut client_error: EventWriter<MqttClientError>,
 ) {
-    for (parent, subscribe) in query.iter() {
-        debug!("subscribe to {:?}", subscribe.topic);
-        let client = clients.get(**parent).unwrap();
+    for (entity, mut client) in clients.iter_mut() {
+        if client.pedding_subscribes.is_empty() {
+            continue;
+        }
+        let sub_lists = client.pedding_subscribes.drain(..).collect::<Vec<_>>();
         let _ = client
-            .try_subscribe(subscribe.topic.clone(), subscribe.qos)
-            .map_err(|e| {
-                client_error.send(MqttClientError {
-                    entity: **parent,
-                    error: e,
-                })
-            });
+            .subscribe_many(sub_lists)
+            .map_err(|e| client_error.send(MqttClientError { entity, error: e }));
+    }
+}
+
+fn on_add_subscribe(
+    mut clients: Query<&mut MqttClient>,
+    query: Query<(&Parent, &SubscribeTopic), Added<SubscribeTopic>>,
+) {
+    for (parent, subscribe) in query.iter() {
+        let mut client = clients.get_mut(**parent).unwrap();
+        client
+            .pedding_subscribes
+            .push(SubscribeFilter::new(subscribe.topic.clone(), subscribe.qos));
     }
 }
 
@@ -283,7 +296,6 @@ fn on_remove_subscribe(
     mut client_error: EventWriter<MqttClientError>,
 ) {
     let (parent, subscribe) = query.get(trigger.entity()).unwrap();
-    debug!("unsubscribe to {:?}", subscribe.topic);
     let client = clients.get(**parent).unwrap();
     let _ = client
         .try_unsubscribe(subscribe.topic.clone())

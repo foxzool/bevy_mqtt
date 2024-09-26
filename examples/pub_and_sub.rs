@@ -14,7 +14,7 @@ fn main() {
         .add_systems(Update, (sub_topic, handle_message, handle_error))
         .add_systems(
             Update,
-            publish_message.run_if(on_timer(std::time::Duration::from_secs(1))),
+            publish_message.run_if(on_timer(Duration::from_secs(1))),
         )
         .run();
 }
