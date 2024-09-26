@@ -25,6 +25,7 @@ fn setup_clients(mut commands: Commands) {
         cap: 10,
     });
 
+    // spawn websocket client
     let mut mqtt_options = MqttOptions::new("mqtt-ws-client", "ws://127.0.0.1:8080", 8080);
     mqtt_options.set_transport(Transport::Ws);
     // mqtt_options.set_credentials("username", "password");
@@ -39,6 +40,7 @@ fn setup_clients(mut commands: Commands) {
     ));
 }
 
+// just a marker component for filter
 #[derive(Component)]
 struct WebsocketMqttClient;
 
