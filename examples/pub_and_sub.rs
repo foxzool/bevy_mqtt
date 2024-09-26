@@ -1,54 +1,17 @@
-use std::time::SystemTime;
-
 use bevy::{prelude::*, time::common_conditions::on_timer};
 use bevy_log::LogPlugin;
 use bevy_mqtt::{
-    rumqttc::{MqttOptions, QoS},
-    MqttClient, MqttClientError, MqttClientState, MqttConnectError, MqttEvent, MqttPlugin,
-    MqttPublishOutgoing, MqttSetting, SubscribeTopic, TopicMessage,
+    rumqttc::QoS, MqttClient, MqttClientConnected, MqttClientError, MqttConnectError, MqttEvent,
+    MqttPlugin, MqttSetting, SubscribeTopic, TopicMessage,
 };
-use bevy_state::prelude::OnEnter;
-use bincode::ErrorKind;
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Message {
-    i: usize,
-    time: SystemTime,
-}
-
-impl From<&Message> for Vec<u8> {
-    fn from(value: &Message) -> Self {
-        bincode::serialize(value).unwrap()
-    }
-}
-
-impl From<Message> for Vec<u8> {
-    fn from(value: Message) -> Self {
-        bincode::serialize(&value).unwrap()
-    }
-}
-
-impl TryFrom<&[u8]> for Message {
-    type Error = Box<ErrorKind>;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        bincode::deserialize(value)
-    }
-}
+use rumqttc::{MqttOptions, Transport};
+use std::time::Duration;
 
 fn main() {
     App::new()
-        .insert_resource(MqttSetting {
-            mqtt_options: MqttOptions::new("mqtt-serde", "127.0.0.1", 1883),
-            cap: 10,
-        })
         .add_plugins((MinimalPlugins, MqttPlugin, LogPlugin::default()))
-        .add_systems(Update, (handle_message, handle_error))
-        .add_systems(
-            OnEnter(MqttClientState::Connected),
-            (sub_topic_direct, sub_topic_by_component),
-        )
+        .add_systems(Startup, setup_clients)
+        .add_systems(Update, (sub_topic, handle_message, handle_error))
         .add_systems(
             Update,
             publish_message.run_if(on_timer(std::time::Duration::from_secs(1))),
@@ -56,13 +19,62 @@ fn main() {
         .run();
 }
 
+fn setup_clients(mut commands: Commands) {
+    commands.spawn(MqttSetting {
+        mqtt_options: MqttOptions::new("bevy-mqtt-client", "127.0.0.1", 1883),
+        cap: 10,
+    });
+
+    let mut mqtt_options = MqttOptions::new("mqtt-ws-client", "ws://127.0.0.1:8080", 8080);
+    mqtt_options.set_transport(Transport::Ws);
+    // mqtt_options.set_credentials("username", "password");
+    mqtt_options.set_keep_alive(Duration::from_secs(5));
+
+    commands.spawn((
+        MqttSetting {
+            mqtt_options,
+            cap: 10,
+        },
+        WebsocketMqttClient,
+    ));
+}
+
+#[derive(Component)]
+struct WebsocketMqttClient;
+
+/// this is a system that subscribes to a topic and handle the incoming messages
+fn sub_topic(
+    mqtt_client: Query<(Entity, &MqttClient), Added<MqttClientConnected>>,
+    mut commands: Commands,
+) {
+    for (entity, client) in mqtt_client.iter() {
+        client
+            .subscribe("hello".to_string(), QoS::AtMostOnce)
+            .unwrap();
+
+        let child_id = commands
+            .spawn(SubscribeTopic::new("+/mqtt", QoS::AtMostOnce))
+            .observe(|topic_message: Trigger<TopicMessage>| {
+                println!(
+                    "Topic: '+/mqtt' received : {:?}",
+                    topic_message.event().payload
+                );
+            })
+            .id();
+        commands.entity(entity).add_child(child_id);
+    }
+}
+
+/// this is global handler for all incoming messages
 fn handle_message(mut mqtt_event: EventReader<MqttEvent>) {
     for event in mqtt_event.read() {
         match &event.0 {
             rumqttc::Event::Incoming(income) => match income {
                 rumqttc::Incoming::Publish(publish) => {
-                    let message: Message = bincode::deserialize(&publish.payload).unwrap();
-                    println!("Received Publish: {:?}", message);
+                    println!(
+                        "Topic Component: {} Received: {:?}",
+                        publish.topic, publish.payload
+                    );
                 }
                 _ => {
                     println!("Incoming: {:?}", income);
@@ -86,52 +98,20 @@ fn handle_error(
     }
 }
 
-/// there are two ways to subscribe to a topic
-/// 1. Directly subscribe to a topic
-/// 2. Subscribe to a topic by component
-fn sub_topic_direct(client: Res<MqttClient>) {
-    client
-        .try_subscribe("hello/mqtt", QoS::AtMostOnce)
-        .expect("subscribe failed");
-}
-
-fn sub_topic_by_component(mut commands: Commands) {
-    commands
-        .spawn(SubscribeTopic::new("+/mqtt", QoS::AtMostOnce))
-        .observe(|topic_message: Trigger<TopicMessage>| {
-            println!(
-                "topic: {} received : {:?}",
-                topic_message.event().topic,
-                topic_message.event().payload
-            );
-        });
-}
-
-fn publish_message(mut pub_events: EventWriter<MqttPublishOutgoing>) {
-    let mut list = vec![];
-    for i in 0..3 {
-        let message = Message {
-            i,
-            time: SystemTime::now(),
-        };
-
-        list.push(MqttPublishOutgoing {
-            topic: "hello/mqtt".to_string(),
-            qos: QoS::AtLeastOnce,
-            retain: false,
-            payload: message.into(),
-        });
-        list.push(MqttPublishOutgoing {
-            topic: "bevy/mqtt".to_string(),
-            qos: QoS::AtLeastOnce,
-            retain: false,
-            payload: Message {
-                i: 999,
-                time: SystemTime::now(),
-            }
-            .into(),
-        });
+fn publish_message(mqtt_client: Query<&MqttClient, With<MqttClientConnected>>) {
+    for client in mqtt_client.iter() {
+        client
+            .publish(
+                "hello".to_string(),
+                QoS::AtMostOnce,
+                false,
+                "mqtt".as_bytes(),
+            )
+            .unwrap();
+        for i in 0..3 {
+            client
+                .publish(format!("{}/mqtt", i), QoS::AtMostOnce, false, b"hello")
+                .unwrap();
+        }
     }
-
-    pub_events.send_batch(list);
 }
