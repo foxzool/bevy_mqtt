@@ -50,6 +50,7 @@ fn sub_topic(
     mut commands: Commands,
 ) {
     for (entity, client, setting) in mqtt_client.iter() {
+        // subscribe directly
         client
             .subscribe("hello".to_string(), QoS::AtMostOnce)
             .unwrap();

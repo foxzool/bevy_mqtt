@@ -106,6 +106,7 @@ pub struct MqttPublishOutgoing {
 
 #[derive(Debug, Event)]
 pub struct MqttPublishPacket {
+    pub entity: Entity,
     pub dup: bool,
     pub qos: QoS,
     pub retain: bool,
@@ -140,6 +141,7 @@ fn handle_mqtt_events(
                 }
                 rumqttc::Event::Incoming(rumqttc::Incoming::Publish(publish)) => {
                     publish_incoming.send(MqttPublishPacket {
+                        entity,
                         dup: publish.dup,
                         qos: publish.qos,
                         retain: publish.retain,
