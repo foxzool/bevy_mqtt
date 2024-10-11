@@ -2,8 +2,9 @@
 
 use bevy_app::{App, Plugin, Update};
 use bevy_ecs::prelude::*;
-use bevy_hierarchy::Parent;
+use bevy_hierarchy::{HierarchyQueryExt, Parent};
 use bevy_log::{debug, trace};
+use bevy_reflect::Reflect;
 use bytes::Bytes;
 use flume::{bounded, Receiver};
 use regex::Regex;
@@ -23,6 +24,7 @@ impl Plugin for MqttPlugin {
             .add_event::<MqttPublishOutgoing>()
             .add_event::<MqttPublishPacket>()
             .add_event::<DisconnectMqttClient>()
+            .register_type::<SubscribeTopic>()
             .add_systems(
                 Update,
                 (on_added_setting_component, pending_subscribe_topic),
@@ -202,18 +204,76 @@ fn on_added_setting_component(
 }
 
 /// A component to store the topic and qos to subscribe
-#[derive(Debug, Clone, Component)]
+#[derive(Debug, Clone, Reflect, Component)]
+#[reflect(from_reflect = false)]
 pub struct SubscribeTopic {
     topic: String,
-    re: Regex,
+    #[reflect(ignore)]
     qos: QoS,
+    #[reflect(ignore)]
+    re: Regex,
+}
+
+pub trait ToQos {
+    fn to_qos(&self) -> QoS;
+}
+
+impl ToQos for i32 {
+    fn to_qos(&self) -> QoS {
+        match self {
+            0 => QoS::AtMostOnce,
+            1 => QoS::AtLeastOnce,
+            2 => QoS::ExactlyOnce,
+            _ => QoS::AtMostOnce,
+        }
+    }
+}
+
+impl ToQos for u8 {
+    fn to_qos(&self) -> QoS {
+        match self {
+            0 => QoS::AtMostOnce,
+            1 => QoS::AtLeastOnce,
+            2 => QoS::ExactlyOnce,
+            _ => QoS::AtMostOnce,
+        }
+    }
+}
+
+impl ToQos for u16 {
+    fn to_qos(&self) -> QoS {
+        match self {
+            0 => QoS::AtMostOnce,
+            1 => QoS::AtLeastOnce,
+            2 => QoS::ExactlyOnce,
+            _ => QoS::AtMostOnce,
+        }
+    }
+}
+
+impl ToQos for u32 {
+    fn to_qos(&self) -> QoS {
+        match self {
+            0 => QoS::AtMostOnce,
+            1 => QoS::AtLeastOnce,
+            2 => QoS::ExactlyOnce,
+            _ => QoS::AtMostOnce,
+        }
+    }
+}
+
+impl ToQos for QoS {
+    fn to_qos(&self) -> QoS {
+        *self
+    }
 }
 
 impl SubscribeTopic {
-    pub fn new(topic: impl ToString, qos: QoS) -> Self {
+    pub fn new(topic: impl ToString, qos: impl ToQos) -> Self {
         let topic = topic.to_string();
         let regex_pattern = topic.replace("+", "[^/]+").replace("#", ".+");
         let re = Regex::new(&format!("^{}$", regex_pattern)).unwrap();
+        let qos = qos.to_qos();
         Self { topic, re, qos }
     }
 
@@ -281,13 +341,17 @@ fn pending_subscribe_topic(
 
 fn on_add_subscribe(
     mut clients: Query<&mut MqttClient>,
-    query: Query<(&Parent, &SubscribeTopic), Added<SubscribeTopic>>,
+    parent_query: Query<&Parent>,
+    query: Query<(Entity, &SubscribeTopic), Added<SubscribeTopic>>,
 ) {
-    for (parent, subscribe) in query.iter() {
-        let mut client = clients.get_mut(**parent).unwrap();
-        client
-            .pedding_subscribes
-            .push(SubscribeFilter::new(subscribe.topic.clone(), subscribe.qos));
+    for (entity, subscribe) in query.iter() {
+        for ancestor in parent_query.iter_ancestors(entity) {
+            if let Ok(mut client) = clients.get_mut(ancestor) {
+                client
+                    .pedding_subscribes
+                    .push(SubscribeFilter::new(subscribe.topic.clone(), subscribe.qos));
+            }
+        }
     }
 }
 

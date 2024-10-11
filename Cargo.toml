@@ -20,6 +20,7 @@ rust-tls = ["rumqttc/use-rustls"]
 bevy_app = { version = "0.14.2" }
 bevy_ecs = { version = "0.14.2" }
 bevy_log = { version = "0.14.2" }
+bevy_reflect = { version = "0.14.2" }
 bevy_hierarchy = { version = "0.14.2" }
 
 rumqttc = { version = "0.24.0" }
