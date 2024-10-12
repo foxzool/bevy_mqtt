@@ -299,6 +299,7 @@ pub struct TopicMessage {
 fn dispatch_publish_to_topic(
     mut publish_incoming: EventReader<MqttPublishPacket>,
     topic_query: Query<(Entity, &SubscribeTopic)>,
+    parent_query: Query<&Parent>,
     mut commands: Commands,
 ) {
     for packet in publish_incoming.read() {
@@ -306,11 +307,14 @@ fn dispatch_publish_to_topic(
         for (e, subscribed_topic) in topic_query.iter() {
             if subscribed_topic.matches(&packet.topic) {
                 trace!(
-                    "{} Received publish packet: {:?}",
+                    "{:?} {} Received matched packet",
+                    e,
                     subscribed_topic.topic(),
-                    packet
                 );
                 match_entities.push(e);
+                for ancestor in parent_query.iter_ancestors(e) {
+                    match_entities.push(ancestor);
+                }
             }
         }
 
