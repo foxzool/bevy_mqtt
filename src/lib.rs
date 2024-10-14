@@ -361,20 +361,24 @@ fn on_add_subscribe(
 
 fn on_remove_subscribe(
     trigger: Trigger<OnRemove, SubscribeTopic>,
+    parent_query: Query<&Parent>,
     clients: Query<&MqttClient>,
     query: Query<(&Parent, &SubscribeTopic)>,
     mut client_error: EventWriter<MqttClientError>,
 ) {
     let (parent, subscribe) = query.get(trigger.entity()).unwrap();
-    let client = clients.get(**parent).unwrap();
-    let _ = client
-        .try_unsubscribe(subscribe.topic.clone())
-        .map_err(|e| {
-            client_error.send(MqttClientError {
-                entity: **parent,
-                error: e,
-            })
-        });
+    for ancestor in parent_query.iter_ancestors(trigger.entity()) {
+        if let Ok(client) = clients.get(ancestor) {
+            let _ = client
+                .try_unsubscribe(subscribe.topic.clone())
+                .map_err(|e| {
+                    client_error.send(MqttClientError {
+                        entity: **parent,
+                        error: e,
+                    })
+                });
+        }
+    }
 }
 
 #[test]
