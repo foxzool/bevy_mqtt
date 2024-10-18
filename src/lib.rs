@@ -1,6 +1,7 @@
 //! A Bevy plugin for MQTT
 
 use bevy_app::{App, Plugin, Update};
+use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::*;
 use bevy_hierarchy::{HierarchyQueryExt, Parent};
 use bevy_log::{debug, trace};
@@ -9,7 +10,8 @@ use bytes::Bytes;
 use flume::{bounded, Receiver};
 use regex::Regex;
 pub use rumqttc;
-use rumqttc::{ClientError, ConnectionError, QoS, SubscribeFilter};
+use rumqttc::{qos, ClientError, ConnectionError, QoS, SubscribeFilter};
+use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
 use std::thread;
 
@@ -208,72 +210,20 @@ fn on_added_setting_component(
 #[reflect(from_reflect = false)]
 pub struct SubscribeTopic {
     topic: String,
-    #[reflect(ignore)]
-    qos: QoS,
+    qos: u8,
     #[reflect(ignore)]
     re: Regex,
 }
 
-pub trait ToQos {
-    fn to_qos(&self) -> QoS;
-}
-
-impl ToQos for i32 {
-    fn to_qos(&self) -> QoS {
-        match self {
-            0 => QoS::AtMostOnce,
-            1 => QoS::AtLeastOnce,
-            2 => QoS::ExactlyOnce,
-            _ => QoS::AtMostOnce,
-        }
-    }
-}
-
-impl ToQos for u8 {
-    fn to_qos(&self) -> QoS {
-        match self {
-            0 => QoS::AtMostOnce,
-            1 => QoS::AtLeastOnce,
-            2 => QoS::ExactlyOnce,
-            _ => QoS::AtMostOnce,
-        }
-    }
-}
-
-impl ToQos for u16 {
-    fn to_qos(&self) -> QoS {
-        match self {
-            0 => QoS::AtMostOnce,
-            1 => QoS::AtLeastOnce,
-            2 => QoS::ExactlyOnce,
-            _ => QoS::AtMostOnce,
-        }
-    }
-}
-
-impl ToQos for u32 {
-    fn to_qos(&self) -> QoS {
-        match self {
-            0 => QoS::AtMostOnce,
-            1 => QoS::AtLeastOnce,
-            2 => QoS::ExactlyOnce,
-            _ => QoS::AtMostOnce,
-        }
-    }
-}
-
-impl ToQos for QoS {
-    fn to_qos(&self) -> QoS {
-        *self
-    }
-}
+/// A component to store the packet payload cache
+#[derive(Debug, Component, Default, Deref, DerefMut)]
+pub struct PacketCache(pub VecDeque<Bytes>);
 
 impl SubscribeTopic {
-    pub fn new(topic: impl ToString, qos: impl ToQos) -> Self {
+    pub fn new(topic: impl ToString, qos: u8) -> Self {
         let topic = topic.to_string();
         let regex_pattern = topic.replace("+", "[^/]+").replace("#", ".+");
         let re = Regex::new(&format!("^{}$", regex_pattern)).unwrap();
-        let qos = qos.to_qos();
         Self { topic, re, qos }
     }
 
@@ -285,7 +235,7 @@ impl SubscribeTopic {
         &self.topic
     }
 
-    pub fn qos(&self) -> QoS {
+    pub fn qos(&self) -> u8 {
         self.qos
     }
 }
@@ -298,13 +248,13 @@ pub struct TopicMessage {
 
 fn dispatch_publish_to_topic(
     mut publish_incoming: EventReader<MqttPublishPacket>,
-    topic_query: Query<(Entity, &SubscribeTopic)>,
+    mut topic_query: Query<(Entity, &SubscribeTopic, Option<&mut PacketCache>)>,
     parent_query: Query<&Parent>,
     mut commands: Commands,
 ) {
     for packet in publish_incoming.read() {
         let mut match_entities = vec![];
-        for (e, subscribed_topic) in topic_query.iter() {
+        for (e, subscribed_topic, opt_packet_cache) in topic_query.iter_mut() {
             if subscribed_topic.matches(&packet.topic) {
                 trace!(
                     "{:?} {} Received matched packet",
@@ -312,6 +262,11 @@ fn dispatch_publish_to_topic(
                     subscribed_topic.topic(),
                 );
                 match_entities.push(e);
+
+                if let Some(mut message_cache) = opt_packet_cache {
+                    message_cache.push_back(packet.payload.clone());
+                }
+
                 for ancestor in parent_query.iter_ancestors(e) {
                     match_entities.push(ancestor);
                 }
@@ -351,9 +306,10 @@ fn on_add_subscribe(
     for (entity, subscribe) in query.iter() {
         for ancestor in parent_query.iter_ancestors(entity) {
             if let Ok(mut client) = clients.get_mut(ancestor) {
-                client
-                    .pedding_subscribes
-                    .push(SubscribeFilter::new(subscribe.topic.clone(), subscribe.qos));
+                client.pedding_subscribes.push(SubscribeFilter::new(
+                    subscribe.topic.clone(),
+                    qos(subscribe.qos).unwrap_or(QoS::AtMostOnce),
+                ));
             }
         }
     }
@@ -383,6 +339,6 @@ fn on_remove_subscribe(
 
 #[test]
 fn test_topic_matches() {
-    let subscribe = SubscribeTopic::new("hello/+/world".to_string(), QoS::AtMostOnce);
+    let subscribe = SubscribeTopic::new("hello/+/world".to_string(), 0);
     assert!(subscribe.matches("hello/1/world"));
 }

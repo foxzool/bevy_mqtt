@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - SubscribeTopic search mqtt client from ancestors
+- Add `PackageCache` to store the package for each topic
 
 ## [0.4.2] - 2024-09-26
 

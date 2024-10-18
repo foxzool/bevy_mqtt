@@ -57,7 +57,7 @@ fn sub_topic(
 
         let setting = setting.clone();
         let child_id = commands
-            .spawn(SubscribeTopic::new("+/mqtt", QoS::AtMostOnce))
+            .spawn(SubscribeTopic::new("+/mqtt", 0))
             .observe(move |topic_message: Trigger<TopicMessage>| {
                 println!(
                     "{:?}: Topic: '+/mqtt' received : {:?}",
