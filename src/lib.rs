@@ -39,7 +39,7 @@ impl Plugin for MqttPlugin {
                     on_add_subscribe,
                 ),
             )
-            .observe(on_remove_subscribe);
+            .add_observer(on_remove_subscribe);
     }
 }
 

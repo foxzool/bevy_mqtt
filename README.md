@@ -144,6 +144,7 @@ fn publish_message(mqtt_client: Query<&MqttClient, With<MqttClientConnected>>) {
 
 | bevy | bevy_mqtt     |
 |------|---------------|
+| 0.15 | 0.5           |
 | 0.14 | 0.2, 0.3, 0.4 |
 | 0.13 | 0.1           |
 
