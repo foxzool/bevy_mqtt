@@ -21,12 +21,12 @@ fn main() {
 
 fn setup_clients(mut commands: Commands) {
     commands.spawn(MqttSetting {
-        mqtt_options: MqttOptions::new("bevy-mqtt-client", "127.0.0.1", 1883),
+        mqtt_options: MqttOptions::new("bevy-mqtt-client", "localhost", 1883),
         cap: 10,
     });
 
     // spawn websocket client
-    let mut mqtt_options = MqttOptions::new("mqtt-ws-client", "ws://127.0.0.1:8080", 8080);
+    let mut mqtt_options = MqttOptions::new("mqtt-ws-client", "ws://127.0.0.1:9001", 9001);
     mqtt_options.set_transport(Transport::Ws);
     // mqtt_options.set_credentials("username", "password");
     mqtt_options.set_keep_alive(Duration::from_secs(5));
