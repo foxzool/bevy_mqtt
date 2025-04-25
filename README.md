@@ -10,7 +10,7 @@ A mqtt client Plugin for Bevy game engine.
 
 ## Example
 
-first run as mqtt broker like [mosquitto](https://mosquitto.org/)
+    first run as mqtt broker like [mosquitto](https://mosquitto.org/)
 
 then run the example
 
@@ -144,13 +144,19 @@ fn publish_message(mqtt_client: Query<&MqttClient, With<MqttClientConnected>>) {
 
 | bevy | bevy_mqtt     |
 |------|---------------|
+| 0.16 | 0.6           |
 | 0.15 | 0.5           |
 | 0.14 | 0.2, 0.3, 0.4 |
 | 0.13 | 0.1           |
 
 ## License
 
-Dual-licensed under either
+Dual-licensed under either:
 
-- MIT
-- Apache 2.0
+- [`MIT`](LICENSE-MIT): [http://opensource.org/licenses/MIT](http://opensource.org/licenses/MIT)
+- [`Apache 2.0`](LICENSE-APACHE): [http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0)
+
+At your option. This means that when using this crate in your game, you may choose which license to use.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as
+defined in the Apache-2.0 license, shall be dually licensed as above, without any additional terms or conditions.

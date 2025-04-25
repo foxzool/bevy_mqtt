@@ -1,8 +1,8 @@
 [package]
 name = "bevy_mqtt"
 description = "A simple MQTT client for Bevy ECS"
-version = "0.5.0"
-edition = "2021"
+version = "0.6.0"
+edition = "2024"
 readme = "README.md"
 repository = "https://github.com/foxzool/bevy_mqtt"
 homepage = "https://github.com/foxzool/bevy_mqtt"
@@ -19,12 +19,11 @@ native-tls = ["rumqttc/use-native-tls"]
 rust-tls = ["rumqttc/use-rustls"]
 
 [dependencies]
-bevy_app = { version = "0.15.0" }
-bevy_ecs = { version = "0.15.0" }
-bevy_log = { version = "0.15.0" }
-bevy_derive = { version = "0.15.0" }
-bevy_reflect = { version = "0.15.0" }
-bevy_hierarchy = { version = "0.15.0" }
+bevy_app = { version = "0.16" }
+bevy_ecs = { version = "0.16" }
+bevy_log = { version = "0.16" }
+bevy_derive = { version = "0.16" }
+bevy_reflect = { version = "0.16" }
 
 rumqttc = { version = "0.24.0" }
 flume = { version = "0.11.0" }
@@ -32,7 +31,7 @@ bytes = "1"
 regex = { version = "1.10.6" }
 
 [dev-dependencies]
-bevy = { version = "0.15.0", default-features = false }
+bevy = { version = "0.16", default-features = false }
 
 
 [[example]]

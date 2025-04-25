@@ -3,14 +3,13 @@
 use bevy_app::{App, Plugin, Update};
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::*;
-use bevy_hierarchy::{HierarchyQueryExt, Parent};
 use bevy_log::{debug, trace};
 use bevy_reflect::Reflect;
 use bytes::Bytes;
-use flume::{bounded, Receiver};
+use flume::{Receiver, bounded};
 use regex::Regex;
 pub use rumqttc;
-use rumqttc::{qos, ClientError, ConnectionError, QoS, SubscribeFilter};
+use rumqttc::{ClientError, ConnectionError, QoS, SubscribeFilter, qos};
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
 use std::thread;
@@ -46,7 +45,7 @@ impl Plugin for MqttPlugin {
 /// A struct that represents the settings for an MQTT connection
 #[derive(Component, Clone)]
 pub struct MqttSetting {
-    /// Options to configure the behaviour of MQTT connection
+    /// Options to configure the behavior of MQTT connection
     pub mqtt_options: rumqttc::MqttOptions,
     /// specifies the capacity of the bounded async channel.
     pub cap: usize,
@@ -144,7 +143,7 @@ fn handle_mqtt_events(
                     commands.entity(entity).remove::<MqttClientConnected>();
                 }
                 rumqttc::Event::Incoming(rumqttc::Incoming::Publish(publish)) => {
-                    publish_incoming.send(MqttPublishPacket {
+                    publish_incoming.write(MqttPublishPacket {
                         entity,
                         dup: publish.dup,
                         qos: publish.qos,
@@ -156,7 +155,7 @@ fn handle_mqtt_events(
                 }
                 rumqttc::Event::Incoming(_) | rumqttc::Event::Outgoing(_) => {}
             }
-            mqtt_events.send(MqttEvent {
+            mqtt_events.write(MqttEvent {
                 entity,
                 event: event.clone(),
             });
@@ -164,7 +163,7 @@ fn handle_mqtt_events(
 
         while let Ok(error) = client.error_rx.try_recv() {
             commands.entity(entity).remove::<MqttClientConnected>();
-            error_events.send(MqttConnectError { entity, error });
+            error_events.write(MqttConnectError { entity, error });
         }
     }
 }
@@ -249,7 +248,7 @@ pub struct TopicMessage {
 fn dispatch_publish_to_topic(
     mut publish_incoming: EventReader<MqttPublishPacket>,
     mut topic_query: Query<(Entity, &SubscribeTopic, Option<&mut PacketCache>)>,
-    parent_query: Query<&Parent>,
+    parent_query: Query<&ChildOf>,
     mut commands: Commands,
 ) {
     for packet in publish_incoming.read() {
@@ -294,13 +293,13 @@ fn pending_subscribe_topic(
         let sub_lists = client.pedding_subscribes.drain(..).collect::<Vec<_>>();
         let _ = client
             .subscribe_many(sub_lists)
-            .map_err(|e| client_error.send(MqttClientError { entity, error: e }));
+            .map_err(|e| client_error.write(MqttClientError { entity, error: e }));
     }
 }
 
 fn on_add_subscribe(
     mut clients: Query<&mut MqttClient>,
-    parent_query: Query<&Parent>,
+    parent_query: Query<&ChildOf>,
     query: Query<(Entity, &SubscribeTopic), Added<SubscribeTopic>>,
 ) {
     for (entity, subscribe) in query.iter() {
@@ -317,19 +316,19 @@ fn on_add_subscribe(
 
 fn on_remove_subscribe(
     trigger: Trigger<OnRemove, SubscribeTopic>,
-    parent_query: Query<&Parent>,
+    parent_query: Query<&ChildOf>,
     clients: Query<&MqttClient>,
-    query: Query<(&Parent, &SubscribeTopic)>,
+    query: Query<(&ChildOf, &SubscribeTopic)>,
     mut client_error: EventWriter<MqttClientError>,
 ) {
-    let (parent, subscribe) = query.get(trigger.entity()).unwrap();
-    for ancestor in parent_query.iter_ancestors(trigger.entity()) {
+    let (parent, subscribe) = query.get(trigger.target()).unwrap();
+    for ancestor in parent_query.iter_ancestors(trigger.target()) {
         if let Ok(client) = clients.get(ancestor) {
             let _ = client
                 .try_unsubscribe(subscribe.topic.clone())
                 .map_err(|e| {
-                    client_error.send(MqttClientError {
-                        entity: **parent,
+                    client_error.write(MqttClientError {
+                        entity: parent.0,
                         error: e,
                     })
                 });
