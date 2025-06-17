@@ -1,7 +1,7 @@
 [package]
 name = "bevy_mqtt"
 description = "A robust, secure MQTT client plugin for Bevy game engine with comprehensive error handling and performance optimizations"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 readme = "README.md"
 repository = "https://github.com/foxzool/bevy_mqtt"

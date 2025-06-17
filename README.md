@@ -36,7 +36,7 @@ Then add bevy_mqtt to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-bevy_mqtt = "0.7"
+bevy_mqtt = "0.7.1"
 ```
 
 ## Basic Example
@@ -174,8 +174,8 @@ SubscribeTopic::new("sensor/data[temp]/+", QoS::AtMostOnce).unwrap();
 
 | bevy | bevy_mqtt     |
 |------|---------------|
-| 0.16 | 0.7           |
-| 0.16 | 0.6           |
+| 0.16 | 0.7.1         |
+| 0.16 | 0.7, 0.6      |
 | 0.15 | 0.5           |
 | 0.14 | 0.2, 0.3, 0.4 |
 | 0.13 | 0.1           |
