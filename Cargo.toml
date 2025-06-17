@@ -1,7 +1,7 @@
 [package]
 name = "bevy_mqtt"
-description = "A simple MQTT client for Bevy ECS"
-version = "0.6.0"
+description = "A robust, secure MQTT client plugin for Bevy game engine with comprehensive error handling and performance optimizations"
+version = "0.7.0"
 edition = "2024"
 readme = "README.md"
 repository = "https://github.com/foxzool/bevy_mqtt"
@@ -10,7 +10,7 @@ documentation = "https://docs.rs/bevy_mqtt"
 authors = ["FoxZoOL <zhooul@gmail.com>"]
 license = "MIT OR Apache-2.0"
 categories = ["game-development", "network-programming"]
-keywords = ["bevy", "mqtt", "plugin"]
+keywords = ["bevy", "mqtt", "ecs", "gamedev"]
 
 [features]
 websocket = ["rumqttc/websocket"]
