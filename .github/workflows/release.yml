@@ -51,37 +51,107 @@ jobs:
       - name: Generate release notes
         id: release_notes
         run: |
-          cat > release_notes.md << 'EOF'
+          # Get the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          # Generate changelog from commits
+          if [ -n "$PREV_TAG" ]; then
+            echo "## bevy_mqtt v${{ steps.version.outputs.VERSION }}" > release_notes.md
+            echo "" >> release_notes.md
+            
+            # Get commits since last tag and categorize them
+            COMMITS=$(git log ${PREV_TAG}..HEAD --oneline --no-merges)
+            
+            # Check for different types of changes
+            FEATURES=$(echo "$COMMITS" | grep -E "(feat|✨)" || true)
+            FIXES=$(echo "$COMMITS" | grep -E "(fix|🐛)" || true)  
+            DOCS=$(echo "$COMMITS" | grep -E "(docs|📝)" || true)
+            CI=$(echo "$COMMITS" | grep -E "(ci|🚀|⬆️)" || true)
+            REFACTOR=$(echo "$COMMITS" | grep -E "(refactor|♻️)" || true)
+            SECURITY=$(echo "$COMMITS" | grep -E "(security|🔒|🛡️)" || true)
+            PERF=$(echo "$COMMITS" | grep -E "(perf|⚡)" || true)
+            
+            echo "### What's Changed" >> release_notes.md
+            echo "" >> release_notes.md
+            
+            if [ -n "$FEATURES" ]; then
+              echo "#### ✨ New Features" >> release_notes.md
+              echo "$FEATURES" | sed 's/^[a-f0-9]* /- /' >> release_notes.md
+              echo "" >> release_notes.md
+            fi
+            
+            if [ -n "$SECURITY" ]; then
+              echo "#### 🔒 Security Improvements" >> release_notes.md
+              echo "$SECURITY" | sed 's/^[a-f0-9]* /- /' >> release_notes.md
+              echo "" >> release_notes.md
+            fi
+            
+            if [ -n "$PERF" ]; then
+              echo "#### ⚡ Performance Improvements" >> release_notes.md
+              echo "$PERF" | sed 's/^[a-f0-9]* /- /' >> release_notes.md
+              echo "" >> release_notes.md
+            fi
+            
+            if [ -n "$FIXES" ]; then
+              echo "#### 🐛 Bug Fixes" >> release_notes.md
+              echo "$FIXES" | sed 's/^[a-f0-9]* /- /' >> release_notes.md
+              echo "" >> release_notes.md
+            fi
+            
+            if [ -n "$DOCS" ]; then
+              echo "#### 📝 Documentation" >> release_notes.md
+              echo "$DOCS" | sed 's/^[a-f0-9]* /- /' >> release_notes.md
+              echo "" >> release_notes.md
+            fi
+            
+            if [ -n "$CI" ]; then
+              echo "#### 🚀 CI/CD Improvements" >> release_notes.md
+              echo "$CI" | sed 's/^[a-f0-9]* /- /' >> release_notes.md
+              echo "" >> release_notes.md
+            fi
+            
+            if [ -n "$REFACTOR" ]; then
+              echo "#### ♻️ Code Improvements" >> release_notes.md
+              echo "$REFACTOR" | sed 's/^[a-f0-9]* /- /' >> release_notes.md
+              echo "" >> release_notes.md
+            fi
+            
+            # Add remaining commits that don't match categories
+            OTHER=$(echo "$COMMITS" | grep -vE "(feat|fix|docs|ci|refactor|security|perf|✨|🐛|📝|🚀|♻️|🔒|🛡️|⚡|⬆️)" || true)
+            if [ -n "$OTHER" ]; then
+              echo "#### 🔧 Other Changes" >> release_notes.md
+              echo "$OTHER" | sed 's/^[a-f0-9]* /- /' >> release_notes.md
+              echo "" >> release_notes.md
+            fi
+            
+          else
+            # Fallback for first release
+            cat > release_notes.md << 'EOF'
           ## bevy_mqtt v${{ steps.version.outputs.VERSION }}
           
           ### What's New
-          This release includes significant improvements in security, performance, and code quality.
+          This is the initial release or a release without a previous tag for comparison.
           
-          ### Major Features
-          - 🔒 **Security**: Regex injection protection in topic patterns
-          - ⚡ **Performance**: Optimized memory allocation patterns with Local<Vec> reuse
-          - 🛡️ **Robustness**: Enhanced thread safety and panic handling
-          - 📦 **Caching**: Improved packet cache with proper capacity limits and LRU eviction
-          - 🎯 **Type Safety**: QoS enum usage throughout the API for better type safety
+          ### Key Features
+          - 🔌 **Easy Integration** - Simple plugin architecture for Bevy ECS
+          - 🔒 **Security First** - Regex injection protection and robust error handling
+          - ⚡ **High Performance** - Optimized message dispatch with memory reuse patterns
+          - 🌐 **Multiple Transports** - Support for TCP and WebSocket connections
+          - 📦 **Message Caching** - Built-in packet caching with configurable capacity limits
+          EOF
+          fi
           
-          ### Documentation
-          - Comprehensive README with advanced examples
-          - Security best practices documentation
-          - WebSocket and caching examples
-          
-          ### Breaking Changes
-          This version includes breaking changes that improve security and type safety:
-          - `SubscribeTopic` now uses `QoS` enum instead of `u8`
-          - Enhanced error handling may change some error behaviors
+          # Add installation and footer
+          cat >> release_notes.md << EOF
           
           ### Installation
-          ```toml
+          \`\`\`toml
           [dependencies]
           bevy_mqtt = "${{ steps.version.outputs.VERSION }}"
-          ```
+          \`\`\`
           
-          ### Changelog
-          For detailed changes, see the commit history since the previous release.
+          ### Full Changelog
+          **Full Changelog**: https://github.com/foxzool/bevy_mqtt/compare/${PREV_TAG}...v${{ steps.version.outputs.VERSION }}
           EOF
       
       - name: Create GitHub Release
