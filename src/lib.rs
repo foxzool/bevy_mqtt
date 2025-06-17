@@ -4,12 +4,11 @@ use bevy_app::{App, Plugin, Update};
 // Removed unused imports: use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::*;
 use bevy_log::{debug, trace};
-use bevy_reflect::Reflect;
 use bytes::Bytes;
 use flume::{Receiver, bounded};
 use regex::Regex;
 pub use rumqttc;
-use rumqttc::{ClientError, ConnectionError, QoS, SubscribeFilter, qos};
+use rumqttc::{ClientError, ConnectionError, QoS, SubscribeFilter};
 use std::{
     collections::VecDeque,
     ops::{Deref, DerefMut},
@@ -27,7 +26,7 @@ impl Plugin for MqttPlugin {
             .add_event::<MqttPublishOutgoing>()
             .add_event::<MqttPublishPacket>()
             .add_event::<DisconnectMqttClient>()
-            .register_type::<SubscribeTopic>()
+            // Note: SubscribeTopic cannot be registered for reflection due to QoS enum
             .add_systems(Update, (connect_mqtt_clients, pending_subscribe_topic))
             .add_systems(
                 Update,
@@ -233,12 +232,10 @@ fn connect_mqtt_clients(
 }
 
 /// A component to store the topic and qos to subscribe
-#[derive(Debug, Clone, Reflect, Component)]
-#[reflect(from_reflect = false)]
+#[derive(Debug, Clone, Component)]
 pub struct SubscribeTopic {
     topic: String,
-    qos: u8,
-    #[reflect(ignore)]
+    qos: QoS,
     re: Regex,
 }
 
@@ -305,7 +302,7 @@ impl PacketCache {
 }
 
 impl SubscribeTopic {
-    pub fn new(topic: impl ToString, qos: u8) -> Result<Self, regex::Error> {
+    pub fn new(topic: impl ToString, qos: QoS) -> Result<Self, regex::Error> {
         let topic = topic.to_string();
         let regex_pattern = topic.replace("+", "[^/]+").replace("#", ".+");
         let re = Regex::new(&format!("^{}$", regex_pattern))?;
@@ -320,7 +317,7 @@ impl SubscribeTopic {
         &self.topic
     }
 
-    pub fn qos(&self) -> u8 {
+    pub fn qos(&self) -> QoS {
         self.qos
     }
 }
@@ -393,7 +390,7 @@ fn on_add_subscribe(
             if let Ok(mut client) = clients.get_mut(ancestor) {
                 client.pending_subscribes.push(SubscribeFilter::new(
                     subscribe.topic.clone(),
-                    qos(subscribe.qos).unwrap_or(QoS::AtMostOnce),
+                    subscribe.qos,
                 ));
             }
         }
@@ -477,14 +474,14 @@ fn handle_outgoing_publish(
 
 #[test]
 fn test_topic_matches() {
-    let subscribe = SubscribeTopic::new("hello/+/world".to_string(), 0).unwrap();
+    let subscribe = SubscribeTopic::new("hello/+/world".to_string(), QoS::AtMostOnce).unwrap();
     assert!(subscribe.matches("hello/1/world"));
 }
 
 #[test]
 fn test_invalid_topic_pattern() {
     // Test that invalid regex patterns are handled gracefully
-    let result = SubscribeTopic::new("hello/[invalid", 0);
+    let result = SubscribeTopic::new("hello/[invalid", QoS::AtMostOnce);
     assert!(result.is_err());
 }
 

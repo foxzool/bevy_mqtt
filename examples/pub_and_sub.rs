@@ -60,7 +60,7 @@ fn sub_topic(
 
         let setting = setting.clone();
         let child_id = commands
-            .spawn(SubscribeTopic::new("+/mqtt", 0).expect("Invalid topic pattern"))
+            .spawn(SubscribeTopic::new("+/mqtt", QoS::AtMostOnce).expect("Invalid topic pattern"))
             .observe(move |topic_message: Trigger<TopicMessage>| {
                 println!(
                     "{:?}: Topic: '+/mqtt' received : {:?}",
