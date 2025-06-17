@@ -12,6 +12,7 @@ use rumqttc::{ClientError, ConnectionError, QoS, SubscribeFilter};
 use std::{
     collections::VecDeque,
     ops::{Deref, DerefMut},
+    panic,
     thread,
 };
 
@@ -163,9 +164,11 @@ fn handle_mqtt_events(
         }
 
         while let Ok(error) = client.error_rx.try_recv() {
-            // When connection error occurs, remove MqttClient and MqttClientConnected
-            // This will trigger connect_mqtt_clients system to rebuild the client on next
-            // frame
+            // When connection error occurs, remove both MqttClient and MqttClientConnected components.
+            // These components MUST be removed together to maintain consistency:
+            // - MqttClient: Contains the actual client and channels 
+            // - MqttClientConnected: Marks the client as connected
+            // This will trigger connect_mqtt_clients system to rebuild the client on next frame
             commands
                 .entity(entity)
                 .remove::<(MqttClient, MqttClientConnected)>();
@@ -199,31 +202,55 @@ fn connect_mqtt_clients(
         let error_sender = to_async_error.clone();
 
         thread::spawn(move || {
-            // Process connection events until error or channel disconnect
-            for notification in connection.iter() {
-                match notification {
-                    Ok(event) => {
-                        // If send fails, the receiver is dropped, thread should exit
-                        if event_sender.send(event).is_err() {
-                            trace!("MQTT event channel closed, exiting thread");
+            // Wrap the entire thread logic in panic handling to ensure robust error reporting
+            let thread_result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                // Process connection events until error or channel disconnect
+                for notification in connection.iter() {
+                    match notification {
+                        Ok(event) => {
+                            // If send fails, the receiver is dropped, thread should exit
+                            if event_sender.send(event).is_err() {
+                                trace!("MQTT event channel closed, exiting thread");
+                                return;
+                            }
+                        }
+                        Err(connection_err) => {
+                            // Send the error and exit the thread
+                            // The main thread will handle reconnection by recreating the client
+                            if error_sender.send(connection_err).is_err() {
+                                // This can happen if the MqttClient component is removed and the receiver is dropped.
+                                // It's an expected condition for shutdown.
+                                trace!("MQTT error channel closed, exiting thread.");
+                            }
+                            trace!("MQTT connection error, exiting thread for reconnection");
                             return;
                         }
                     }
-                    Err(connection_err) => {
-                        // Send the error and exit the thread
-                        // The main thread will handle reconnection by recreating the client
-                        if error_sender.send(connection_err).is_err() {
-                            // This can happen if the MqttClient component is removed and the receiver is dropped.
-                            // It's an expected condition for shutdown.
-                            trace!("MQTT error channel closed, exiting thread.");
-                        }
-                        trace!("MQTT connection error, exiting thread for reconnection");
-                        return;
-                    }
                 }
+                // If connection.iter() ends naturally, also exit
+                trace!("MQTT connection iterator ended, exiting thread");
+            }));
+            
+            // Handle any panics that occurred in the thread
+            if let Err(panic_info) = thread_result {
+                let panic_message = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown panic occurred".to_string()
+                };
+                
+                // Try to send a synthetic connection error to signal the panic to the main thread
+                // If this fails, the main thread will eventually detect the thread termination
+                let synthetic_error = ConnectionError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("MQTT thread panicked: {}", panic_message),
+                ));
+                
+                let _ = error_sender.send(synthetic_error);
+                debug!("MQTT thread panicked: {}", panic_message);
             }
-            // If connection.iter() ends naturally, also exit
-            trace!("MQTT connection iterator ended, exiting thread");
         });
 
         commands.entity(entity).insert(MqttClient {
@@ -309,7 +336,24 @@ impl PacketCache {
 impl SubscribeTopic {
     pub fn new(topic: impl ToString, qos: QoS) -> Result<Self, regex::Error> {
         let topic = topic.to_string();
-        let regex_pattern = topic.replace("+", "[^/]+").replace("#", ".+");
+        
+        // Escape regex metacharacters in topic, preserving MQTT wildcards + and #
+        let escaped_topic = topic
+            .chars()
+            .map(|c| match c {
+                // Preserve MQTT wildcards
+                '+' | '#' => c.to_string(),
+                // Escape regex metacharacters
+                '.' | '^' | '$' | '*' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '\\' | '|' => {
+                    format!("\\{}", c)
+                }
+                // Regular characters
+                _ => c.to_string(),
+            })
+            .collect::<String>();
+        
+        // Convert MQTT wildcards to regex patterns
+        let regex_pattern = escaped_topic.replace("+", "[^/]+").replace("#", ".+");
         let re = Regex::new(&format!("^{}$", regex_pattern))?;
         Ok(Self { topic, re, qos })
     }
@@ -338,10 +382,13 @@ fn dispatch_publish_to_topic(
     mut topic_query: Query<(Entity, &SubscribeTopic, Option<&mut PacketCache>)>,
     parent_query: Query<&ChildOf>,
     mut commands: Commands,
-    mut match_entities: Local<Vec<Entity>>, // Use Local to reuse the Vec across calls
+    // Performance optimization: Use Local<Vec<Entity>> to avoid allocating a new Vec on every system run.
+    // The Vec is automatically reused across calls, and std::mem::take() at the end ensures it starts
+    // empty for the next iteration, while transferring ownership to trigger_targets().
+    mut match_entities: Local<Vec<Entity>>,
 ) {
     for packet in publish_incoming.read() {
-        // The vector is empty from the previous iteration's std::mem::take
+        // IMPORTANT: The vector is guaranteed to be empty from the previous iteration's std::mem::take
         for (e, subscribed_topic, opt_packet_cache) in topic_query.iter_mut() {
             if subscribed_topic.matches(&packet.topic) {
                 trace!(
@@ -491,9 +538,28 @@ fn test_topic_matches() {
 
 #[test]
 fn test_invalid_topic_pattern() {
-    // Test that invalid regex patterns are handled gracefully
+    // Test that the regex escaping now prevents invalid patterns from causing errors
+    // Previously "hello/[invalid" would fail, but now it's escaped as "hello/\[invalid"
     let result = SubscribeTopic::new("hello/[invalid", QoS::AtMostOnce);
-    assert!(result.is_err());
+    assert!(result.is_ok());
+    
+    // Verify the escaped pattern works correctly
+    let subscribe = result.unwrap();
+    assert!(subscribe.matches("hello/[invalid"));
+    assert!(!subscribe.matches("hello/invalid"));
+}
+
+#[test]
+fn test_topic_regex_escaping() {
+    // Test that regex metacharacters are properly escaped
+    let subscribe = SubscribeTopic::new("test/topic.with*special[chars]", QoS::AtMostOnce).unwrap();
+    assert!(subscribe.matches("test/topic.with*special[chars]"));
+    assert!(!subscribe.matches("test/topicXwithXspecialXchars"));
+    
+    // Test MQTT wildcards still work after escaping
+    let subscribe_wildcard = SubscribeTopic::new("test/+/special.*", QoS::AtMostOnce).unwrap();
+    assert!(subscribe_wildcard.matches("test/anything/special.*"));
+    assert!(!subscribe_wildcard.matches("test/anything/specialXX"));
 }
 
 #[test]
