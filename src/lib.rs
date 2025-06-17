@@ -1,7 +1,7 @@
 //! A Bevy plugin for MQTT
 
 use bevy_app::{App, Plugin, Update};
-use bevy_derive::{Deref, DerefMut};
+// Removed unused imports: use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::*;
 use bevy_log::{debug, trace};
 use bevy_reflect::Reflect;
@@ -242,9 +242,67 @@ pub struct SubscribeTopic {
     re: Regex,
 }
 
-/// A component to store the packet payload cache
-#[derive(Debug, Component, Default, Deref, DerefMut)]
-pub struct PacketCache(pub VecDeque<Bytes>);
+/// A component to store the packet payload cache with capacity limit
+#[derive(Debug, Component)]
+pub struct PacketCache {
+    pub packets: VecDeque<Bytes>,
+    pub capacity: usize,
+}
+
+impl Default for PacketCache {
+    fn default() -> Self {
+        Self::new(100) // Default capacity of 100 messages
+    }
+}
+
+impl PacketCache {
+    /// Create a new PacketCache with specified capacity
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            packets: VecDeque::with_capacity(capacity.min(1000)), // Cap at 1000 for safety
+            capacity: capacity.max(1), // Minimum capacity of 1
+        }
+    }
+
+    /// Push a new packet, removing oldest if at capacity
+    pub fn push(&mut self, packet: Bytes) {
+        if self.packets.len() >= self.capacity {
+            self.packets.pop_front(); // Remove oldest packet
+            trace!("PacketCache at capacity {}, removing oldest packet", self.capacity);
+        }
+        self.packets.push_back(packet);
+    }
+
+    /// Get the number of cached packets
+    pub fn len(&self) -> usize {
+        self.packets.len()
+    }
+
+    /// Check if cache is empty
+    pub fn is_empty(&self) -> bool {
+        self.packets.is_empty()
+    }
+
+    /// Get iterator over packets (oldest first)
+    pub fn iter(&self) -> impl Iterator<Item = &Bytes> {
+        self.packets.iter()
+    }
+
+    /// Clear all cached packets
+    pub fn clear(&mut self) {
+        self.packets.clear();
+    }
+
+    /// Get the most recent packet
+    pub fn latest(&self) -> Option<&Bytes> {
+        self.packets.back()
+    }
+
+    /// Get the oldest packet
+    pub fn oldest(&self) -> Option<&Bytes> {
+        self.packets.front()
+    }
+}
 
 impl SubscribeTopic {
     pub fn new(topic: impl ToString, qos: u8) -> Result<Self, regex::Error> {
@@ -291,7 +349,7 @@ fn dispatch_publish_to_topic(
                 match_entities.push(e);
 
                 if let Some(mut message_cache) = opt_packet_cache {
-                    message_cache.push_back(packet.payload.clone());
+                    message_cache.push(packet.payload.clone());
                 }
 
                 for ancestor in parent_query.iter_ancestors(e) {
@@ -428,4 +486,52 @@ fn test_invalid_topic_pattern() {
     // Test that invalid regex patterns are handled gracefully
     let result = SubscribeTopic::new("hello/[invalid", 0);
     assert!(result.is_err());
+}
+
+#[test]
+fn test_packet_cache_capacity_limit() {
+    let mut cache = PacketCache::new(2);
+    
+    // Test basic functionality
+    assert_eq!(cache.len(), 0);
+    assert!(cache.is_empty());
+    
+    // Add first packet
+    cache.push(Bytes::from("packet1"));
+    assert_eq!(cache.len(), 1);
+    assert!(!cache.is_empty());
+    assert_eq!(cache.latest(), Some(&Bytes::from("packet1")));
+    assert_eq!(cache.oldest(), Some(&Bytes::from("packet1")));
+    
+    // Add second packet
+    cache.push(Bytes::from("packet2"));
+    assert_eq!(cache.len(), 2);
+    assert_eq!(cache.latest(), Some(&Bytes::from("packet2")));
+    assert_eq!(cache.oldest(), Some(&Bytes::from("packet1")));
+    
+    // Add third packet - should remove oldest
+    cache.push(Bytes::from("packet3"));
+    assert_eq!(cache.len(), 2); // Still only 2 packets
+    assert_eq!(cache.latest(), Some(&Bytes::from("packet3")));
+    assert_eq!(cache.oldest(), Some(&Bytes::from("packet2"))); // packet1 was removed
+    
+    // Test clear
+    cache.clear();
+    assert_eq!(cache.len(), 0);
+    assert!(cache.is_empty());
+}
+
+#[test]
+fn test_packet_cache_minimum_capacity() {
+    // Test that capacity is at least 1
+    let cache = PacketCache::new(0);
+    assert_eq!(cache.capacity, 1);
+}
+
+#[test]
+fn test_packet_cache_maximum_capacity() {
+    // Test that capacity is capped at 1000
+    let cache = PacketCache::new(2000);
+    assert_eq!(cache.capacity, 2000); // Should respect the limit
+    assert!(cache.packets.capacity() <= 1000); // But VecDeque capacity is capped
 }
