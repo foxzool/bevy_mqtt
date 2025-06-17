@@ -12,8 +12,7 @@ use rumqttc::{ClientError, ConnectionError, QoS, SubscribeFilter};
 use std::{
     collections::VecDeque,
     ops::{Deref, DerefMut},
-    panic,
-    thread,
+    panic, thread,
 };
 
 #[derive(Default)]
@@ -164,11 +163,13 @@ fn handle_mqtt_events(
         }
 
         while let Ok(error) = client.error_rx.try_recv() {
-            // When connection error occurs, remove both MqttClient and MqttClientConnected components.
-            // These components MUST be removed together to maintain consistency:
-            // - MqttClient: Contains the actual client and channels 
+            // When connection error occurs, remove both MqttClient and MqttClientConnected
+            // components. These components MUST be removed together to maintain
+            // consistency:
+            // - MqttClient: Contains the actual client and channels
             // - MqttClientConnected: Marks the client as connected
-            // This will trigger connect_mqtt_clients system to rebuild the client on next frame
+            // This will trigger connect_mqtt_clients system to rebuild the client on next
+            // frame
             commands
                 .entity(entity)
                 .remove::<(MqttClient, MqttClientConnected)>();
@@ -202,7 +203,8 @@ fn connect_mqtt_clients(
         let error_sender = to_async_error.clone();
 
         thread::spawn(move || {
-            // Wrap the entire thread logic in panic handling to ensure robust error reporting
+            // Wrap the entire thread logic in panic handling to ensure robust error
+            // reporting
             let thread_result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                 // Process connection events until error or channel disconnect
                 for notification in connection.iter() {
@@ -218,7 +220,8 @@ fn connect_mqtt_clients(
                             // Send the error and exit the thread
                             // The main thread will handle reconnection by recreating the client
                             if error_sender.send(connection_err).is_err() {
-                                // This can happen if the MqttClient component is removed and the receiver is dropped.
+                                // This can happen if the MqttClient component is removed and the
+                                // receiver is dropped.
                                 // It's an expected condition for shutdown.
                                 trace!("MQTT error channel closed, exiting thread.");
                             }
@@ -230,7 +233,7 @@ fn connect_mqtt_clients(
                 // If connection.iter() ends naturally, also exit
                 trace!("MQTT connection iterator ended, exiting thread");
             }));
-            
+
             // Handle any panics that occurred in the thread
             if let Err(panic_info) = thread_result {
                 let panic_message = if let Some(s) = panic_info.downcast_ref::<&str>() {
@@ -240,14 +243,15 @@ fn connect_mqtt_clients(
                 } else {
                     "Unknown panic occurred".to_string()
                 };
-                
-                // Try to send a synthetic connection error to signal the panic to the main thread
-                // If this fails, the main thread will eventually detect the thread termination
-                let synthetic_error = ConnectionError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("MQTT thread panicked: {}", panic_message),
-                ));
-                
+
+                // Try to send a synthetic connection error to signal the panic to the main
+                // thread If this fails, the main thread will eventually detect
+                // the thread termination
+                let synthetic_error = ConnectionError::Io(std::io::Error::other(format!(
+                    "MQTT thread panicked: {}",
+                    panic_message
+                )));
+
                 let _ = error_sender.send(synthetic_error);
                 debug!("MQTT thread panicked: {}", panic_message);
             }
@@ -286,7 +290,7 @@ impl Default for PacketCache {
 impl PacketCache {
     /// Create a new PacketCache with specified capacity
     pub fn new(capacity: usize) -> Self {
-        let safe_capacity = capacity.min(1000).max(1); // Cap at 1000 for safety, minimum 1
+        let safe_capacity = capacity.clamp(1, 1000); // Cap at 1000 for safety, minimum 1
         Self {
             packets: VecDeque::with_capacity(safe_capacity),
             capacity: safe_capacity,
@@ -297,7 +301,10 @@ impl PacketCache {
     pub fn push(&mut self, packet: Bytes) {
         if self.packets.len() >= self.capacity {
             self.packets.pop_front(); // Remove oldest packet
-            trace!("PacketCache at capacity {}, removing oldest packet", self.capacity);
+            trace!(
+                "PacketCache at capacity {}, removing oldest packet",
+                self.capacity
+            );
         }
         self.packets.push_back(packet);
     }
@@ -336,7 +343,7 @@ impl PacketCache {
 impl SubscribeTopic {
     pub fn new(topic: impl ToString, qos: QoS) -> Result<Self, regex::Error> {
         let topic = topic.to_string();
-        
+
         // Escape regex metacharacters in topic, preserving MQTT wildcards + and #
         let escaped_topic = topic
             .chars()
@@ -351,7 +358,7 @@ impl SubscribeTopic {
                 _ => c.to_string(),
             })
             .collect::<String>();
-        
+
         // Convert MQTT wildcards to regex patterns
         let regex_pattern = escaped_topic.replace("+", "[^/]+").replace("#", ".+");
         let re = Regex::new(&format!("^{}$", regex_pattern))?;
@@ -382,13 +389,15 @@ fn dispatch_publish_to_topic(
     mut topic_query: Query<(Entity, &SubscribeTopic, Option<&mut PacketCache>)>,
     parent_query: Query<&ChildOf>,
     mut commands: Commands,
-    // Performance optimization: Use Local<Vec<Entity>> to avoid allocating a new Vec on every system run.
-    // The Vec is automatically reused across calls, and std::mem::take() at the end ensures it starts
-    // empty for the next iteration, while transferring ownership to trigger_targets().
+    // Performance optimization: Use Local<Vec<Entity>> to avoid allocating a new Vec on every
+    // system run. The Vec is automatically reused across calls, and std::mem::take() at the
+    // end ensures it starts empty for the next iteration, while transferring ownership to
+    // trigger_targets().
     mut match_entities: Local<Vec<Entity>>,
 ) {
     for packet in publish_incoming.read() {
-        // IMPORTANT: The vector is guaranteed to be empty from the previous iteration's std::mem::take
+        // IMPORTANT: The vector is guaranteed to be empty from the previous iteration's
+        // std::mem::take
         for (e, subscribed_topic, opt_packet_cache) in topic_query.iter_mut() {
             if subscribed_topic.matches(&packet.topic) {
                 trace!(
@@ -445,15 +454,14 @@ fn on_add_subscribe(
         let mut found_client = false;
         for ancestor in parent_query.iter_ancestors(entity) {
             if let Ok(mut client) = clients.get_mut(ancestor) {
-                client.pending_subscribes.push(SubscribeFilter::new(
-                    subscribe.topic.clone(),
-                    subscribe.qos,
-                ));
+                client
+                    .pending_subscribes
+                    .push(SubscribeFilter::new(subscribe.topic.clone(), subscribe.qos));
                 found_client = true;
                 break; // Found client, no need to check more ancestors
             }
         }
-        
+
         if !found_client {
             debug!(
                 "No MQTT client found for SubscribeTopic entity {:?} with topic '{}'",
@@ -471,13 +479,16 @@ fn on_remove_subscribe(
     mut client_error: EventWriter<MqttClientError>,
 ) {
     let target_entity = trigger.target();
-    
+
     // Try to get the SubscribeTopic data before it's removed
     let subscribe = if let Ok(s) = subscribe_query.get(target_entity) {
         s
     } else {
         // Component already removed or entity destroyed, nothing to do
-        trace!("SubscribeTopic component not found for entity {:?}", target_entity);
+        trace!(
+            "SubscribeTopic component not found for entity {:?}",
+            target_entity
+        );
         return;
     };
 
@@ -506,10 +517,9 @@ fn handle_outgoing_publish(
         if let Ok(client) = clients.get(event.entity) {
             trace!(
                 "Publishing message to topic '{}' via client {:?}",
-                event.topic,
-                event.entity
+                event.topic, event.entity
             );
-            
+
             if let Err(e) = client.publish(
                 event.topic.clone(),
                 event.qos,
@@ -538,11 +548,12 @@ fn test_topic_matches() {
 
 #[test]
 fn test_invalid_topic_pattern() {
-    // Test that the regex escaping now prevents invalid patterns from causing errors
-    // Previously "hello/[invalid" would fail, but now it's escaped as "hello/\[invalid"
+    // Test that the regex escaping now prevents invalid patterns from causing
+    // errors Previously "hello/[invalid" would fail, but now it's escaped as
+    // "hello/\[invalid"
     let result = SubscribeTopic::new("hello/[invalid", QoS::AtMostOnce);
     assert!(result.is_ok());
-    
+
     // Verify the escaped pattern works correctly
     let subscribe = result.unwrap();
     assert!(subscribe.matches("hello/[invalid"));
@@ -555,7 +566,7 @@ fn test_topic_regex_escaping() {
     let subscribe = SubscribeTopic::new("test/topic.with*special[chars]", QoS::AtMostOnce).unwrap();
     assert!(subscribe.matches("test/topic.with*special[chars]"));
     assert!(!subscribe.matches("test/topicXwithXspecialXchars"));
-    
+
     // Test MQTT wildcards still work after escaping
     let subscribe_wildcard = SubscribeTopic::new("test/+/special.*", QoS::AtMostOnce).unwrap();
     assert!(subscribe_wildcard.matches("test/anything/special.*"));
@@ -565,30 +576,30 @@ fn test_topic_regex_escaping() {
 #[test]
 fn test_packet_cache_capacity_limit() {
     let mut cache = PacketCache::new(2);
-    
+
     // Test basic functionality
     assert_eq!(cache.len(), 0);
     assert!(cache.is_empty());
-    
+
     // Add first packet
     cache.push(Bytes::from("packet1"));
     assert_eq!(cache.len(), 1);
     assert!(!cache.is_empty());
     assert_eq!(cache.latest(), Some(&Bytes::from("packet1")));
     assert_eq!(cache.oldest(), Some(&Bytes::from("packet1")));
-    
+
     // Add second packet
     cache.push(Bytes::from("packet2"));
     assert_eq!(cache.len(), 2);
     assert_eq!(cache.latest(), Some(&Bytes::from("packet2")));
     assert_eq!(cache.oldest(), Some(&Bytes::from("packet1")));
-    
+
     // Add third packet - should remove oldest
     cache.push(Bytes::from("packet3"));
     assert_eq!(cache.len(), 2); // Still only 2 packets
     assert_eq!(cache.latest(), Some(&Bytes::from("packet3")));
     assert_eq!(cache.oldest(), Some(&Bytes::from("packet2"))); // packet1 was removed
-    
+
     // Test clear
     cache.clear();
     assert_eq!(cache.len(), 0);
@@ -615,16 +626,16 @@ fn test_packet_cache_capacity_consistency() {
     // Test that push respects the safe capacity limit, not the original user input
     let mut cache = PacketCache::new(5000); // Very large input capacity
     assert_eq!(cache.capacity, 1000); // Should be capped at 1000
-    
+
     // Fill the cache beyond 1000 items should not be possible
     for i in 0..1500 {
         cache.push(Bytes::from(format!("packet{}", i)));
     }
-    
+
     // Cache should never exceed the safe capacity limit of 1000
     assert_eq!(cache.len(), 1000);
     assert_eq!(cache.capacity, 1000);
-    
+
     // The oldest packet should be packet500 (items 0-499 were evicted)
     assert_eq!(cache.oldest(), Some(&Bytes::from("packet500")));
     // The newest packet should be packet1499
