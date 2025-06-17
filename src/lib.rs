@@ -244,11 +244,11 @@ pub struct SubscribeTopic {
 pub struct PacketCache(pub VecDeque<Bytes>);
 
 impl SubscribeTopic {
-    pub fn new(topic: impl ToString, qos: u8) -> Self {
+    pub fn new(topic: impl ToString, qos: u8) -> Result<Self, regex::Error> {
         let topic = topic.to_string();
         let regex_pattern = topic.replace("+", "[^/]+").replace("#", ".+");
-        let re = Regex::new(&format!("^{}$", regex_pattern)).unwrap();
-        Self { topic, re, qos }
+        let re = Regex::new(&format!("^{}$", regex_pattern))?;
+        Ok(Self { topic, re, qos })
     }
 
     pub fn matches(&self, topic: &str) -> bool {
@@ -342,27 +342,53 @@ fn on_add_subscribe(
 fn on_remove_subscribe(
     trigger: Trigger<OnRemove, SubscribeTopic>,
     parent_query: Query<&ChildOf>,
-    clients: Query<&MqttClient>,
-    query: Query<(&ChildOf, &SubscribeTopic)>,
+    clients: Query<(Entity, &MqttClient)>,
+    subscribe_query: Query<&SubscribeTopic>,
     mut client_error: EventWriter<MqttClientError>,
 ) {
-    let (parent, subscribe) = query.get(trigger.target()).unwrap();
-    for ancestor in parent_query.iter_ancestors(trigger.target()) {
-        if let Ok(client) = clients.get(ancestor) {
-            let _ = client
-                .try_unsubscribe(subscribe.topic.clone())
-                .map_err(|e| {
-                    client_error.write(MqttClientError {
-                        entity: parent.0,
-                        error: e,
-                    })
+    let target_entity = trigger.target();
+    
+    // Try to get the SubscribeTopic data before it's removed
+    let subscribe = if let Ok(s) = subscribe_query.get(target_entity) {
+        s
+    } else {
+        // Component already removed or entity destroyed, nothing to do
+        trace!("SubscribeTopic component not found for entity {:?}", target_entity);
+        return;
+    };
+
+    // Look for MQTT clients in ancestor entities
+    for ancestor in parent_query.iter_ancestors(target_entity) {
+        if let Ok((client_entity, client)) = clients.get(ancestor) {
+            if let Err(e) = client.try_unsubscribe(subscribe.topic.clone()) {
+                client_error.write(MqttClientError {
+                    entity: client_entity,
+                    error: e,
                 });
+            }
+        }
+    }
+    
+    // Also check if the entity itself is a client
+    if let Ok((client_entity, client)) = clients.get(target_entity) {
+        if let Err(e) = client.try_unsubscribe(subscribe.topic.clone()) {
+            client_error.write(MqttClientError {
+                entity: client_entity,
+                error: e,
+            });
         }
     }
 }
 
 #[test]
 fn test_topic_matches() {
-    let subscribe = SubscribeTopic::new("hello/+/world".to_string(), 0);
+    let subscribe = SubscribeTopic::new("hello/+/world".to_string(), 0).unwrap();
     assert!(subscribe.matches("hello/1/world"));
+}
+
+#[test]
+fn test_invalid_topic_pattern() {
+    // Test that invalid regex patterns are handled gracefully
+    let result = SubscribeTopic::new("hello/[invalid", 0);
+    assert!(result.is_err());
 }
