@@ -1,0 +1,52 @@
+# Rustfmt configuration for bevy_mqtt
+# See https://rust-lang.github.io/rustfmt/ for full options
+
+# Stable options
+edition = "2024"
+max_width = 100
+hard_tabs = false
+tab_spaces = 4
+newline_style = "Unix"
+use_small_heuristics = "Default"
+
+# Unstable options (require nightly)
+# uncomment if using nightly rustfmt
+# imports_granularity = "Crate"
+# reorder_imports = true
+# reorder_modules = true
+# group_imports = "StdExternalCrate"
+
+# Format strings
+format_strings = true
+format_macro_matchers = true
+
+# Comments and documentation
+normalize_comments = true
+normalize_doc_attributes = true
+wrap_comments = true
+comment_width = 80
+
+# Function formatting
+fn_params_layout = "Tall"
+brace_style = "SameLineWhere"
+control_brace_style = "AlwaysSameLine"
+
+
+
+# Struct and enum formatting
+struct_field_align_threshold = 0
+enum_discrim_align_threshold = 0
+
+# Trailing elements
+trailing_comma = "Vertical"
+trailing_semicolon = true
+
+# Spaces
+spaces_around_ranges = false
+type_punctuation_density = "Wide"
+
+# Misc
+remove_nested_parens = true
+use_field_init_shorthand = true
+force_explicit_abi = true
+condense_wildcard_suffixes = true
