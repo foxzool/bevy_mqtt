@@ -28,7 +28,7 @@ impl Plugin for MqttPlugin {
             .register_type::<SubscribeTopic>()
             .add_systems(
                 Update,
-                (on_added_setting_component, pending_subscribe_topic),
+                (connect_mqtt_clients, pending_subscribe_topic),
             )
             .add_systems(
                 Update,
@@ -162,37 +162,60 @@ fn handle_mqtt_events(
         }
 
         while let Ok(error) = client.error_rx.try_recv() {
-            commands.entity(entity).remove::<MqttClientConnected>();
+            // When connection error occurs, remove MqttClient and MqttClientConnected
+            // This will trigger connect_mqtt_clients system to rebuild the client on next frame
+            commands.entity(entity).remove::<(MqttClient, MqttClientConnected)>();
             error_events.write(MqttConnectError { entity, error });
         }
     }
 }
 
-/// spawn mqtt client by setting component
-fn on_added_setting_component(
-    setting_query: Query<(Entity, &MqttSetting), Added<MqttSetting>>,
+/// Connect MQTT clients for settings that don't have a client yet
+/// This handles both initial connections and reconnections after errors
+fn connect_mqtt_clients(
+    // Query for settings that don't have a client yet (initial or after error)
+    setting_query: Query<(Entity, &MqttSetting), Without<MqttClient>>,
     mut commands: Commands,
 ) {
     for (entity, setting) in setting_query.iter() {
-        let (to_async_event, from_async_event) = bounded::<rumqttc::Event>(100);
-        let (to_async_error, from_async_error) = bounded::<ConnectionError>(100);
+        debug!(
+            "Creating MQTT client for {:?}",
+            setting.mqtt_options.broker_address()
+        );
+        
+        // Use the setting's cap for channel capacity instead of hardcoded 100
+        let (to_async_event, from_async_event) = bounded::<rumqttc::Event>(setting.cap);
+        let (to_async_error, from_async_error) = bounded::<ConnectionError>(setting.cap);
 
         let (client, mut connection) =
             rumqttc::Client::new(setting.mqtt_options.clone(), setting.cap);
 
+        // Clone senders for the thread
+        let event_sender = to_async_event.clone();
+        let error_sender = to_async_error.clone();
+        
         thread::spawn(move || {
+            // Process connection events until error or channel disconnect
             for notification in connection.iter() {
                 match notification {
                     Ok(event) => {
-                        let _ = to_async_event.send(event);
+                        // If send fails, the receiver is dropped, thread should exit
+                        if event_sender.send(event).is_err() {
+                            trace!("MQTT event channel closed, exiting thread");
+                            return;
+                        }
                     }
                     Err(connection_err) => {
-                        let _ = to_async_error.send(connection_err);
-                        // auto reconnect after 5 seconds
-                        thread::sleep(std::time::Duration::from_secs(5));
+                        // Send the error and exit the thread
+                        // The main thread will handle reconnection by recreating the client
+                        let _ = error_sender.send(connection_err);
+                        trace!("MQTT connection error, exiting thread for reconnection");
+                        return;
                     }
                 }
             }
+            // If connection.iter() ends naturally, also exit
+            trace!("MQTT connection iterator ended, exiting thread");
         });
 
         commands.entity(entity).insert(MqttClient {
