@@ -255,9 +255,10 @@ impl Default for PacketCache {
 impl PacketCache {
     /// Create a new PacketCache with specified capacity
     pub fn new(capacity: usize) -> Self {
+        let safe_capacity = capacity.min(1000).max(1); // Cap at 1000 for safety, minimum 1
         Self {
-            packets: VecDeque::with_capacity(capacity.min(1000)), // Cap at 1000 for safety
-            capacity: capacity.max(1), // Minimum capacity of 1
+            packets: VecDeque::with_capacity(safe_capacity),
+            capacity: safe_capacity,
         }
     }
 
@@ -333,9 +334,10 @@ fn dispatch_publish_to_topic(
     mut topic_query: Query<(Entity, &SubscribeTopic, Option<&mut PacketCache>)>,
     parent_query: Query<&ChildOf>,
     mut commands: Commands,
+    mut match_entities: Local<Vec<Entity>>, // Use Local to reuse the Vec across calls
 ) {
     for packet in publish_incoming.read() {
-        let mut match_entities = vec![];
+        // The vector is empty from the previous iteration's std::mem::take
         for (e, subscribed_topic, opt_packet_cache) in topic_query.iter_mut() {
             if subscribed_topic.matches(&packet.topic) {
                 trace!(
@@ -355,13 +357,16 @@ fn dispatch_publish_to_topic(
             }
         }
 
-        commands.trigger_targets(
-            TopicMessage {
-                topic: packet.topic.clone(),
-                payload: packet.payload.clone(),
-            },
-            match_entities,
-        );
+        if !match_entities.is_empty() {
+            commands.trigger_targets(
+                TopicMessage {
+                    topic: packet.topic.clone(),
+                    payload: packet.payload.clone(),
+                },
+                // Take the vec, leaving an empty one in its place for the next run
+                std::mem::take(&mut *match_entities),
+            );
+        }
     }
 }
 
@@ -529,6 +534,27 @@ fn test_packet_cache_minimum_capacity() {
 fn test_packet_cache_maximum_capacity() {
     // Test that capacity is capped at 1000
     let cache = PacketCache::new(2000);
-    assert_eq!(cache.capacity, 2000); // Should respect the limit
-    assert!(cache.packets.capacity() <= 1000); // But VecDeque capacity is capped
+    assert_eq!(cache.capacity, 1000); // The capacity field itself should be capped at 1000
+    assert!(cache.packets.capacity() <= 1000); // And the VecDeque capacity is also capped
+}
+
+#[test]
+fn test_packet_cache_capacity_consistency() {
+    // Test that push respects the safe capacity limit, not the original user input
+    let mut cache = PacketCache::new(5000); // Very large input capacity
+    assert_eq!(cache.capacity, 1000); // Should be capped at 1000
+    
+    // Fill the cache beyond 1000 items should not be possible
+    for i in 0..1500 {
+        cache.push(Bytes::from(format!("packet{}", i)));
+    }
+    
+    // Cache should never exceed the safe capacity limit of 1000
+    assert_eq!(cache.len(), 1000);
+    assert_eq!(cache.capacity, 1000);
+    
+    // The oldest packet should be packet500 (items 0-499 were evicted)
+    assert_eq!(cache.oldest(), Some(&Bytes::from("packet500")));
+    // The newest packet should be packet1499
+    assert_eq!(cache.latest(), Some(&Bytes::from("packet1499")));
 }
