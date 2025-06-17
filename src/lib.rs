@@ -212,7 +212,11 @@ fn connect_mqtt_clients(
                     Err(connection_err) => {
                         // Send the error and exit the thread
                         // The main thread will handle reconnection by recreating the client
-                        let _ = error_sender.send(connection_err);
+                        if error_sender.send(connection_err).is_err() {
+                            // This can happen if the MqttClient component is removed and the receiver is dropped.
+                            // It's an expected condition for shutdown.
+                            trace!("MQTT error channel closed, exiting thread.");
+                        }
                         trace!("MQTT connection error, exiting thread for reconnection");
                         return;
                     }
