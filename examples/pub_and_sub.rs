@@ -2,7 +2,7 @@ use bevy::{prelude::*, time::common_conditions::on_timer};
 use bevy_log::LogPlugin;
 use bevy_mqtt::{
     MqttClient, MqttClientConnected, MqttClientError, MqttConnectError, MqttEvent, MqttPlugin,
-    MqttSetting, SubscribeTopic, TopicMessage, rumqttc::QoS,
+    MqttPublishOutgoing, MqttSetting, SubscribeTopic, TopicMessage, rumqttc::QoS,
 };
 use rumqttc::{MqttOptions, Transport};
 use std::time::Duration;
@@ -14,7 +14,10 @@ fn main() {
         .add_systems(Update, (sub_topic, handle_message, handle_error))
         .add_systems(
             Update,
-            publish_message.run_if(on_timer(Duration::from_secs(1))),
+            (
+                publish_message.run_if(on_timer(Duration::from_secs(1))),
+                publish_via_events.run_if(on_timer(Duration::from_secs(2))),
+            ),
         )
         .run();
 }
@@ -118,5 +121,22 @@ fn publish_message(mqtt_client: Query<&MqttClient, With<MqttClientConnected>>) {
                 .publish(format!("{}/mqtt", i), QoS::AtMostOnce, false, b"hello")
                 .unwrap();
         }
+    }
+}
+
+/// Example of using the new event-driven publish API
+fn publish_via_events(
+    mqtt_clients: Query<Entity, (With<MqttClient>, With<MqttClientConnected>)>,
+    mut publish_events: EventWriter<MqttPublishOutgoing>,
+) {
+    for client_entity in mqtt_clients.iter() {
+        // Send message via event - this is useful for decoupled systems
+        publish_events.write(MqttPublishOutgoing {
+            entity: client_entity,
+            topic: "events/test".to_string(),
+            qos: QoS::AtMostOnce,
+            retain: false,
+            payload: b"Hello from event system!".to_vec(),
+        });
     }
 }

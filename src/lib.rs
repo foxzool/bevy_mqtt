@@ -35,6 +35,7 @@ impl Plugin for MqttPlugin {
                     handle_mqtt_events,
                     dispatch_publish_to_topic,
                     on_add_subscribe,
+                    handle_outgoing_publish,
                 ),
             )
             .add_observer(on_remove_subscribe);
@@ -100,6 +101,8 @@ pub struct MqttClientError {
 
 #[derive(Debug, Event)]
 pub struct MqttPublishOutgoing {
+    /// The entity of the MqttClient that should publish the message
+    pub entity: Entity,
     pub topic: String,
     pub qos: QoS,
     pub retain: bool,
@@ -376,6 +379,40 @@ fn on_remove_subscribe(
                 entity: client_entity,
                 error: e,
             });
+        }
+    }
+}
+
+/// Handle outgoing publish events to send messages via MQTT clients
+fn handle_outgoing_publish(
+    mut events: EventReader<MqttPublishOutgoing>,
+    clients: Query<&MqttClient>,
+    mut client_error: EventWriter<MqttClientError>,
+) {
+    for event in events.read() {
+        if let Ok(client) = clients.get(event.entity) {
+            trace!(
+                "Publishing message to topic '{}' via client {:?}",
+                event.topic,
+                event.entity
+            );
+            
+            if let Err(e) = client.publish(
+                event.topic.clone(),
+                event.qos,
+                event.retain,
+                event.payload.clone(),
+            ) {
+                client_error.write(MqttClientError {
+                    entity: event.entity,
+                    error: e,
+                });
+            }
+        } else {
+            debug!(
+                "Cannot publish to topic '{}': MqttClient not found for entity {:?}",
+                event.topic, event.entity
+            );
         }
     }
 }
