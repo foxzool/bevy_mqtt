@@ -10,9 +10,11 @@ use flume::{Receiver, bounded};
 use regex::Regex;
 pub use rumqttc;
 use rumqttc::{ClientError, ConnectionError, QoS, SubscribeFilter, qos};
-use std::collections::VecDeque;
-use std::ops::{Deref, DerefMut};
-use std::thread;
+use std::{
+    collections::VecDeque,
+    ops::{Deref, DerefMut},
+    thread,
+};
 
 #[derive(Default)]
 pub struct MqttPlugin;
@@ -26,10 +28,7 @@ impl Plugin for MqttPlugin {
             .add_event::<MqttPublishPacket>()
             .add_event::<DisconnectMqttClient>()
             .register_type::<SubscribeTopic>()
-            .add_systems(
-                Update,
-                (connect_mqtt_clients, pending_subscribe_topic),
-            )
+            .add_systems(Update, (connect_mqtt_clients, pending_subscribe_topic))
             .add_systems(
                 Update,
                 (
@@ -163,8 +162,11 @@ fn handle_mqtt_events(
 
         while let Ok(error) = client.error_rx.try_recv() {
             // When connection error occurs, remove MqttClient and MqttClientConnected
-            // This will trigger connect_mqtt_clients system to rebuild the client on next frame
-            commands.entity(entity).remove::<(MqttClient, MqttClientConnected)>();
+            // This will trigger connect_mqtt_clients system to rebuild the client on next
+            // frame
+            commands
+                .entity(entity)
+                .remove::<(MqttClient, MqttClientConnected)>();
             error_events.write(MqttConnectError { entity, error });
         }
     }
@@ -182,7 +184,7 @@ fn connect_mqtt_clients(
             "Creating MQTT client for {:?}",
             setting.mqtt_options.broker_address()
         );
-        
+
         // Use the setting's cap for channel capacity instead of hardcoded 100
         let (to_async_event, from_async_event) = bounded::<rumqttc::Event>(setting.cap);
         let (to_async_error, from_async_error) = bounded::<ConnectionError>(setting.cap);
@@ -193,7 +195,7 @@ fn connect_mqtt_clients(
         // Clone senders for the thread
         let event_sender = to_async_event.clone();
         let error_sender = to_async_error.clone();
-        
+
         thread::spawn(move || {
             // Process connection events until error or channel disconnect
             for notification in connection.iter() {

@@ -1,8 +1,8 @@
 use bevy::{prelude::*, time::common_conditions::on_timer};
 use bevy_log::LogPlugin;
 use bevy_mqtt::{
-    rumqttc::QoS, MqttClient, MqttClientConnected, MqttClientError, MqttConnectError, MqttEvent,
-    MqttPlugin, MqttSetting, SubscribeTopic, TopicMessage,
+    MqttClient, MqttClientConnected, MqttClientError, MqttConnectError, MqttEvent, MqttPlugin,
+    MqttSetting, SubscribeTopic, TopicMessage, rumqttc::QoS,
 };
 use rumqttc::{MqttOptions, Transport};
 use std::time::Duration;
