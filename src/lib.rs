@@ -383,9 +383,9 @@ fn pending_subscribe_topic(
             continue;
         }
         let sub_lists = client.pending_subscribes.drain(..).collect::<Vec<_>>();
-        let _ = client
-            .subscribe_many(sub_lists)
-            .map_err(|e| client_error.write(MqttClientError { entity, error: e }));
+        if let Err(e) = client.subscribe_many(sub_lists) {
+            client_error.write(MqttClientError { entity, error: e });
+        }
     }
 }
 
@@ -395,13 +395,23 @@ fn on_add_subscribe(
     query: Query<(Entity, &SubscribeTopic), Added<SubscribeTopic>>,
 ) {
     for (entity, subscribe) in query.iter() {
+        let mut found_client = false;
         for ancestor in parent_query.iter_ancestors(entity) {
             if let Ok(mut client) = clients.get_mut(ancestor) {
                 client.pending_subscribes.push(SubscribeFilter::new(
                     subscribe.topic.clone(),
                     subscribe.qos,
                 ));
+                found_client = true;
+                break; // Found client, no need to check more ancestors
             }
+        }
+        
+        if !found_client {
+            debug!(
+                "No MQTT client found for SubscribeTopic entity {:?} with topic '{}'",
+                entity, subscribe.topic
+            );
         }
     }
 }
@@ -424,25 +434,17 @@ fn on_remove_subscribe(
         return;
     };
 
-    // Look for MQTT clients in ancestor entities
-    for ancestor in parent_query.iter_ancestors(target_entity) {
-        if let Ok((client_entity, client)) = clients.get(ancestor) {
+    // Look for MQTT clients in the entity itself and its ancestors
+    for entity_to_check in
+        std::iter::once(target_entity).chain(parent_query.iter_ancestors(target_entity))
+    {
+        if let Ok((client_entity, client)) = clients.get(entity_to_check) {
             if let Err(e) = client.try_unsubscribe(subscribe.topic.clone()) {
                 client_error.write(MqttClientError {
                     entity: client_entity,
                     error: e,
                 });
             }
-        }
-    }
-    
-    // Also check if the entity itself is a client
-    if let Ok((client_entity, client)) = clients.get(target_entity) {
-        if let Err(e) = client.try_unsubscribe(subscribe.topic.clone()) {
-            client_error.write(MqttClientError {
-                entity: client_entity,
-                error: e,
-            });
         }
     }
 }
