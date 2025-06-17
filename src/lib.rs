@@ -46,7 +46,7 @@ impl Plugin for MqttPlugin {
 pub struct MqttSetting {
     /// Options to configure the behavior of MQTT connection
     pub mqtt_options: rumqttc::MqttOptions,
-    /// specifies the capacity of the bounded async channel.
+    /// Specifies the capacity of the bounded async channel.
     pub cap: usize,
 }
 
@@ -56,7 +56,7 @@ pub struct MqttClient {
     client: rumqttc::Client,
     event_rx: Receiver<rumqttc::Event>,
     error_rx: Receiver<ConnectionError>,
-    pedding_subscribes: Vec<SubscribeFilter>,
+    pending_subscribes: Vec<SubscribeFilter>,
 }
 
 impl Deref for MqttClient {
@@ -117,7 +117,7 @@ pub struct MqttPublishPacket {
     pub payload: Bytes,
 }
 
-/// AN event to disconnect an MQTT client
+/// An event to disconnect an MQTT client
 #[derive(Event)]
 pub struct DisconnectMqttClient;
 
@@ -224,7 +224,7 @@ fn connect_mqtt_clients(
             client,
             event_rx: from_async_event,
             error_rx: from_async_error,
-            pedding_subscribes: vec![],
+            pending_subscribes: vec![],
         });
     }
 }
@@ -312,10 +312,10 @@ fn pending_subscribe_topic(
     mut client_error: EventWriter<MqttClientError>,
 ) {
     for (entity, mut client) in clients.iter_mut() {
-        if client.pedding_subscribes.is_empty() {
+        if client.pending_subscribes.is_empty() {
             continue;
         }
-        let sub_lists = client.pedding_subscribes.drain(..).collect::<Vec<_>>();
+        let sub_lists = client.pending_subscribes.drain(..).collect::<Vec<_>>();
         let _ = client
             .subscribe_many(sub_lists)
             .map_err(|e| client_error.write(MqttClientError { entity, error: e }));
@@ -330,7 +330,7 @@ fn on_add_subscribe(
     for (entity, subscribe) in query.iter() {
         for ancestor in parent_query.iter_ancestors(entity) {
             if let Ok(mut client) = clients.get_mut(ancestor) {
-                client.pedding_subscribes.push(SubscribeFilter::new(
+                client.pending_subscribes.push(SubscribeFilter::new(
                     subscribe.topic.clone(),
                     qos(subscribe.qos).unwrap_or(QoS::AtMostOnce),
                 ));
