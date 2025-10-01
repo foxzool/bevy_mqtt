@@ -1,4 +1,5 @@
 use bevy::{prelude::*, time::common_conditions::on_timer};
+use bevy_ecs::{message::MessageReader, message::MessageWriter, observer::On};
 use bevy_log::LogPlugin;
 use bevy_mqtt::{
     MqttClient, MqttClientConnected, MqttClientError, MqttConnectError, MqttEvent, MqttPlugin,
@@ -61,7 +62,7 @@ fn sub_topic(
         let setting = setting.clone();
         let child_id = commands
             .spawn(SubscribeTopic::new("+/mqtt", QoS::AtMostOnce).expect("Invalid topic pattern"))
-            .observe(move |topic_message: Trigger<TopicMessage>| {
+            .observe(move |topic_message: On<TopicMessage>| {
                 println!(
                     "{:?}: Topic: '+/mqtt' received : {:?}",
                     setting.mqtt_options.broker_address().clone(),
@@ -74,7 +75,7 @@ fn sub_topic(
 }
 
 /// this is global handler for all incoming messages
-fn handle_message(mut mqtt_event: EventReader<MqttEvent>) {
+fn handle_message(mut mqtt_event: MessageReader<MqttEvent>) {
     for event in mqtt_event.read() {
         match &event.event {
             rumqttc::Event::Incoming(income) => match income {
@@ -94,8 +95,8 @@ fn handle_message(mut mqtt_event: EventReader<MqttEvent>) {
 }
 
 fn handle_error(
-    mut connect_errors: EventReader<MqttConnectError>,
-    mut client_errors: EventReader<MqttClientError>,
+    mut connect_errors: MessageReader<MqttConnectError>,
+    mut client_errors: MessageReader<MqttClientError>,
 ) {
     for error in connect_errors.read() {
         println!("connect Error: {:?}", error);
@@ -127,7 +128,7 @@ fn publish_message(mqtt_client: Query<&MqttClient, With<MqttClientConnected>>) {
 /// Example of using the new event-driven publish API
 fn publish_via_events(
     mqtt_clients: Query<Entity, (With<MqttClient>, With<MqttClientConnected>)>,
-    mut publish_events: EventWriter<MqttPublishOutgoing>,
+    mut publish_events: MessageWriter<MqttPublishOutgoing>,
 ) {
     for client_entity in mqtt_clients.iter() {
         // Send message via event - this is useful for decoupled systems
