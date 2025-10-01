@@ -36,7 +36,7 @@ Then add bevy_mqtt to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-bevy_mqtt = "0.7.1"
+bevy_mqtt = "0.8.0"
 ```
 
 ## Basic Example
@@ -47,6 +47,7 @@ use bevy_mqtt::{
     MqttClient, MqttClientConnected, MqttClientError, MqttConnectError, MqttEvent,
     MqttPlugin, MqttPublishOutgoing, MqttSetting, SubscribeTopic, TopicMessage,
 };
+use bevy_ecs::{message::MessageReader, message::MessageWriter};
 use rumqttc::{MqttOptions, QoS};
 use std::time::Duration;
 
@@ -89,7 +90,7 @@ fn subscribe_to_topics(
     }
 }
 
-fn handle_messages(mut mqtt_events: EventReader<MqttEvent>) {
+fn handle_messages(mut mqtt_events: MessageReader<MqttEvent>) {
     for event in mqtt_events.read() {
         if let rumqttc::Event::Incoming(rumqttc::Incoming::Publish(publish)) = &event.event {
             println!("Received on {}: {:?}", publish.topic, publish.payload);
@@ -98,8 +99,8 @@ fn handle_messages(mut mqtt_events: EventReader<MqttEvent>) {
 }
 
 fn handle_errors(
-    mut connect_errors: EventReader<MqttConnectError>,
-    mut client_errors: EventReader<MqttClientError>,
+    mut connect_errors: MessageReader<MqttConnectError>,
+    mut client_errors: MessageReader<MqttClientError>,
 ) {
     for error in connect_errors.read() {
         eprintln!("MQTT connection error: {:?}", error.error);
@@ -113,10 +114,10 @@ fn handle_errors(
 // Event-driven publishing (recommended)
 fn publish_messages(
     mqtt_clients: Query<Entity, With<MqttClientConnected>>,
-    mut publish_events: EventWriter<MqttPublishOutgoing>,
+    mut publish_events: MessageWriter<MqttPublishOutgoing>,
 ) {
     for client_entity in mqtt_clients.iter() {
-        publish_events.send(MqttPublishOutgoing {
+        publish_events.write(MqttPublishOutgoing {
             entity: client_entity,
             topic: "game/player/position".to_string(),
             qos: QoS::AtLeastOnce,
@@ -174,8 +175,8 @@ SubscribeTopic::new("sensor/data[temp]/+", QoS::AtMostOnce).unwrap();
 
 | bevy | bevy_mqtt     |
 |------|---------------|
-| 0.16 | 0.7.1         |
-| 0.16 | 0.7, 0.6      |
+| 0.17 | 0.8           |
+| 0.16 | 0.7.1, 0.7, 0.6 |
 | 0.15 | 0.5           |
 | 0.14 | 0.2, 0.3, 0.4 |
 | 0.13 | 0.1           |

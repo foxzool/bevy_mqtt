@@ -3,6 +3,11 @@
 use bevy_app::{App, Plugin, Update};
 // Removed unused imports: use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::*;
+use bevy_ecs::{
+    event::{EntityEvent, Event},
+    message::Message,
+    observer::On,
+};
 use bevy_log::{debug, trace};
 use bytes::Bytes;
 use flume::{Receiver, bounded};
@@ -20,12 +25,12 @@ pub struct MqttPlugin;
 
 impl Plugin for MqttPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<MqttEvent>()
-            .add_event::<MqttConnectError>()
-            .add_event::<MqttClientError>()
-            .add_event::<MqttPublishOutgoing>()
-            .add_event::<MqttPublishPacket>()
-            .add_event::<DisconnectMqttClient>()
+        app.add_message::<MqttEvent>()
+            .add_message::<MqttConnectError>()
+            .add_message::<MqttClientError>()
+            .add_message::<MqttPublishOutgoing>()
+            .add_message::<MqttPublishPacket>()
+            .add_message::<DisconnectMqttClient>()
             // Note: SubscribeTopic cannot be registered for reflection due to QoS enum
             .add_systems(Update, (connect_mqtt_clients, pending_subscribe_topic))
             .add_systems(
@@ -78,27 +83,27 @@ impl DerefMut for MqttClient {
 pub struct MqttClientConnected;
 
 /// A wrapper around rumqttc::Event
-#[derive(Debug, Clone, PartialEq, Eq, Event)]
+#[derive(Debug, Clone, PartialEq, Eq, Event, Message)]
 pub struct MqttEvent {
     pub entity: Entity,
     pub event: rumqttc::Event,
 }
 
 /// A wrapper around rumqttc::ConnectionError
-#[derive(Debug, Event)]
+#[derive(Debug, Event, Message)]
 pub struct MqttConnectError {
     pub entity: Entity,
     pub error: ConnectionError,
 }
 
 /// A wrapper around rumqttc::ClientError
-#[derive(Debug, Event)]
+#[derive(Debug, Message)]
 pub struct MqttClientError {
     pub entity: Entity,
     pub error: ClientError,
 }
 
-#[derive(Debug, Event)]
+#[derive(Debug, Message)]
 pub struct MqttPublishOutgoing {
     /// The entity of the MqttClient that should publish the message
     pub entity: Entity,
@@ -108,7 +113,7 @@ pub struct MqttPublishOutgoing {
     pub payload: Vec<u8>,
 }
 
-#[derive(Debug, Event)]
+#[derive(Debug, Event, Message)]
 pub struct MqttPublishPacket {
     pub entity: Entity,
     pub dup: bool,
@@ -120,15 +125,15 @@ pub struct MqttPublishPacket {
 }
 
 /// An event to disconnect an MQTT client
-#[derive(Event)]
+#[derive(Event, Message)]
 pub struct DisconnectMqttClient;
 
 fn handle_mqtt_events(
     clients: Query<(Entity, &MqttClient, &MqttSetting)>,
     mut commands: Commands,
-    mut mqtt_events: EventWriter<MqttEvent>,
-    mut error_events: EventWriter<MqttConnectError>,
-    mut publish_incoming: EventWriter<MqttPublishPacket>,
+    mut mqtt_events: MessageWriter<MqttEvent>,
+    mut error_events: MessageWriter<MqttConnectError>,
+    mut publish_incoming: MessageWriter<MqttPublishPacket>,
 ) {
     for (entity, client, setting) in clients.iter() {
         while let Ok(event) = client.event_rx.try_recv() {
@@ -378,14 +383,16 @@ impl SubscribeTopic {
     }
 }
 
-#[derive(Debug, Event)]
+#[derive(Debug, EntityEvent)]
 pub struct TopicMessage {
+    #[event_target]
+    pub target: Entity,
     pub topic: String,
     pub payload: Bytes,
 }
 
 fn dispatch_publish_to_topic(
-    mut publish_incoming: EventReader<MqttPublishPacket>,
+    mut publish_incoming: MessageReader<MqttPublishPacket>,
     mut topic_query: Query<(Entity, &SubscribeTopic, Option<&mut PacketCache>)>,
     parent_query: Query<&ChildOf>,
     mut commands: Commands,
@@ -418,21 +425,28 @@ fn dispatch_publish_to_topic(
         }
 
         if !match_entities.is_empty() {
-            commands.trigger_targets(
-                TopicMessage {
-                    topic: packet.topic.clone(),
-                    payload: packet.payload.clone(),
-                },
-                // Take the vec, leaving an empty one in its place for the next run
-                std::mem::take(&mut *match_entities),
-            );
+            let entities = std::mem::take(&mut *match_entities);
+            let topic = packet.topic.clone();
+            let payload = packet.payload.clone();
+
+            for entity in entities {
+                let topic_clone = topic.clone();
+                let payload_clone = payload.clone();
+                commands
+                    .entity(entity)
+                    .trigger(move |target: Entity| TopicMessage {
+                        target,
+                        topic: topic_clone,
+                        payload: payload_clone,
+                    });
+            }
         }
     }
 }
 
 fn pending_subscribe_topic(
     mut clients: Query<(Entity, &mut MqttClient)>,
-    mut client_error: EventWriter<MqttClientError>,
+    mut client_error: MessageWriter<MqttClientError>,
 ) {
     for (entity, mut client) in clients.iter_mut() {
         if client.pending_subscribes.is_empty() {
@@ -472,13 +486,13 @@ fn on_add_subscribe(
 }
 
 fn on_remove_subscribe(
-    trigger: Trigger<OnRemove, SubscribeTopic>,
+    trigger: On<Remove, SubscribeTopic>,
     parent_query: Query<&ChildOf>,
     clients: Query<(Entity, &MqttClient)>,
     subscribe_query: Query<&SubscribeTopic>,
-    mut client_error: EventWriter<MqttClientError>,
+    mut client_error: MessageWriter<MqttClientError>,
 ) {
-    let target_entity = trigger.target();
+    let target_entity = trigger.event().entity;
 
     // Try to get the SubscribeTopic data before it's removed
     let subscribe = if let Ok(s) = subscribe_query.get(target_entity) {
@@ -496,22 +510,22 @@ fn on_remove_subscribe(
     for entity_to_check in
         std::iter::once(target_entity).chain(parent_query.iter_ancestors(target_entity))
     {
-        if let Ok((client_entity, client)) = clients.get(entity_to_check) {
-            if let Err(e) = client.try_unsubscribe(subscribe.topic.clone()) {
-                client_error.write(MqttClientError {
-                    entity: client_entity,
-                    error: e,
-                });
-            }
+        if let Ok((client_entity, client)) = clients.get(entity_to_check)
+            && let Err(e) = client.try_unsubscribe(subscribe.topic.clone())
+        {
+            client_error.write(MqttClientError {
+                entity: client_entity,
+                error: e,
+            });
         }
     }
 }
 
 /// Handle outgoing publish events to send messages via MQTT clients
 fn handle_outgoing_publish(
-    mut events: EventReader<MqttPublishOutgoing>,
+    mut events: MessageReader<MqttPublishOutgoing>,
     clients: Query<&MqttClient>,
-    mut client_error: EventWriter<MqttClientError>,
+    mut client_error: MessageWriter<MqttClientError>,
 ) {
     for event in events.read() {
         if let Ok(client) = clients.get(event.entity) {
