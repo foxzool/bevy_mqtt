@@ -17,36 +17,36 @@ use_small_heuristics = "Default"
 # group_imports = "StdExternalCrate"
 
 # Format strings
-format_strings = true
-format_macro_matchers = true
-
-# Comments and documentation
-normalize_comments = true
-normalize_doc_attributes = true
-wrap_comments = true
-comment_width = 80
-
-# Function formatting
-fn_params_layout = "Tall"
-brace_style = "SameLineWhere"
-control_brace_style = "AlwaysSameLine"
-
-
-
-# Struct and enum formatting
-struct_field_align_threshold = 0
-enum_discrim_align_threshold = 0
-
-# Trailing elements
-trailing_comma = "Vertical"
-trailing_semicolon = true
-
-# Spaces
-spaces_around_ranges = false
-type_punctuation_density = "Wide"
-
-# Misc
-remove_nested_parens = true
-use_field_init_shorthand = true
-force_explicit_abi = true
-condense_wildcard_suffixes = true
+#format_strings = true
+#format_macro_matchers = true
+#
+## Comments and documentation
+#normalize_comments = true
+#normalize_doc_attributes = true
+#wrap_comments = true
+#comment_width = 80
+#
+## Function formatting
+#fn_params_layout = "Tall"
+#brace_style = "SameLineWhere"
+#control_brace_style = "AlwaysSameLine"
+#
+#
+#
+## Struct and enum formatting
+#struct_field_align_threshold = 0
+#enum_discrim_align_threshold = 0
+#
+## Trailing elements
+#trailing_comma = "Vertical"
+#trailing_semicolon = true
+#
+## Spaces
+#spaces_around_ranges = false
+#type_punctuation_density = "Wide"
+#
+## Misc
+#remove_nested_parens = true
+#use_field_init_shorthand = true
+#force_explicit_abi = true
+#condense_wildcard_suffixes = true
