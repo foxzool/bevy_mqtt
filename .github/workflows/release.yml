@@ -40,7 +40,7 @@ jobs:
             libvulkan-dev
 
       - name: Cache cargo registry
-        uses: actions/cache@v4.1.2
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
@@ -52,7 +52,7 @@ jobs:
             ${{ runner.os }}-cargo-release-
 
       - name: Cache cargo build
-        uses: actions/cache@v4.1.2
+        uses: actions/cache@v4
         with:
           path: target/
           key: ${{ runner.os }}-cargo-release-build-${{ hashFiles('**/Cargo.toml') }}
