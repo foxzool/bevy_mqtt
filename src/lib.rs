@@ -10,7 +10,7 @@ use bevy_ecs::{
 };
 use bevy_log::{debug, trace};
 use bytes::Bytes;
-use flume::{bounded, Receiver};
+use flume::{Receiver, bounded};
 use regex::Regex;
 pub use rumqttc;
 use rumqttc::{ClientError, ConnectionError, QoS, SubscribeFilter};
