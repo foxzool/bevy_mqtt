@@ -38,4 +38,3 @@ bevy = { version = "0.17", default-features = false }
 name = "pub_and_sub"
 path = "examples/pub_and_sub.rs"
 required-features = ["websocket"]
-
