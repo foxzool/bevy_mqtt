@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Bevy version
 
-lastest bevy version  is 0.16
+latest bevy version is 0.18
 
 ## Project Overview
 
@@ -58,8 +58,8 @@ cargo run --example pub_and_sub --features websocket
 
 ## Dependencies
 
-- **Bevy 0.16**: ECS framework components (bevy_app, bevy_ecs, bevy_log, bevy_derive, bevy_reflect)
-- **rumqttc 0.24**: MQTT client library
+- **Bevy 0.18**: ECS framework components (bevy_app, bevy_ecs, bevy_log, bevy_derive, bevy_reflect)
+- **rumqttc 0.25**: MQTT client library
 - **flume**: Channel communication between threads
 - **regex**: Topic pattern matching for MQTT wildcards
 
@@ -78,4 +78,4 @@ cargo run --example pub_and_sub --features websocket
 
 ## Version Compatibility
 
-Currently targets Bevy 0.16 - check Cargo.toml for exact version requirements when updating Bevy dependencies.
+Currently targets Bevy 0.18 - check Cargo.toml for exact version requirements when updating Bevy dependencies.
