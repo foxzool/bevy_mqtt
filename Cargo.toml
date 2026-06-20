@@ -1,7 +1,7 @@
 [package]
 name = "bevy_mqtt"
 description = "A robust, secure MQTT client plugin for Bevy game engine with comprehensive error handling and performance optimizations"
-version = "0.9.0"
+version = "0.10.0"
 edition = "2024"
 readme = "README.md"
 repository = "https://github.com/foxzool/bevy_mqtt"
@@ -19,11 +19,11 @@ native-tls = ["rumqttc/use-native-tls"]
 rust-tls = ["rumqttc/use-rustls"]
 
 [dependencies]
-bevy_app = { version = "0.18" }
-bevy_ecs = { version = "0.18" }
-bevy_log = { version = "0.18" }
-bevy_derive = { version = "0.18" }
-bevy_reflect = { version = "0.18" }
+bevy_app = { version = "0.19" }
+bevy_ecs = { version = "0.19" }
+bevy_log = { version = "0.19" }
+bevy_derive = { version = "0.19" }
+bevy_reflect = { version = "0.19" }
 
 rumqttc = { version = "0.25" }
 flume = { version = "0.12" }
@@ -31,7 +31,7 @@ bytes = "1"
 regex = { version = "1.12" }
 
 [dev-dependencies]
-bevy = { version = "0.18", default-features = false }
+bevy = { version = "0.19", default-features = false }
 
 
 [[example]]
