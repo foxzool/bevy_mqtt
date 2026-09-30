@@ -175,6 +175,7 @@ SubscribeTopic::new("sensor/data[temp]/+", QoS::AtMostOnce).unwrap();
 
 | bevy | bevy_mqtt     |
 |------|---------------|
+| 0.20.0-rc.2 | unreleased (main) |
 | 0.19 | 0.10          |
 | 0.18 | 0.9           |
 | 0.17 | 0.8           |
