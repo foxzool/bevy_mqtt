@@ -452,7 +452,7 @@ fn pending_subscribe_topic(
         if client.pending_subscribes.is_empty() {
             continue;
         }
-        let sub_lists = client.pending_subscribes.drain(..).collect::<Vec<_>>();
+        let sub_lists = std::mem::take(&mut client.pending_subscribes);
         if let Err(e) = client.subscribe_many(sub_lists) {
             client_error.write(MqttClientError { entity, error: e });
         }
@@ -486,7 +486,7 @@ fn on_add_subscribe(
 }
 
 fn on_remove_subscribe(
-    trigger: On<Remove, SubscribeTopic>,
+    trigger: On<Remove<SubscribeTopic>>,
     parent_query: Query<&ChildOf>,
     clients: Query<(Entity, &MqttClient)>,
     subscribe_query: Query<&SubscribeTopic>,
